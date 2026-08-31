@@ -19,7 +19,8 @@ at startup and reused (DuckDB handles concurrent reads fine).
 """
 
 import duckdb
-from flask import Flask, session, redirect, url_for, request, render_template_string
+from flask import Flask, session, redirect, url_for, request
+from markupsafe import escape
 
 import question_gen
 import name_match
@@ -54,7 +55,9 @@ BASE_CSS = """
   button, .btn { display: inline-block; width: 100%; padding: 13px; border-radius: 10px; border: none;
          background: var(--accent); color: #0f1115; font-weight: 600; font-size: 1rem; cursor: pointer;
          text-align: center; text-decoration: none; margin-top: 4px; }
-  button.secondary { background: #2a2e38; color: var(--text); }
+  /* Also match <a class="btn secondary">, which a bare button.secondary
+     selector missed -- those links rendered as primary green. */
+  button.secondary, .btn.secondary { background: #2a2e38; color: var(--text); }
   .error { color: var(--accent2); font-size: 0.9rem; margin: -6px 0 12px; }
   .candidate { display: block; padding: 12px 14px; margin-bottom: 8px; border-radius: 10px;
                border: 1px solid #2a2e38; background: #12151c; }
@@ -72,7 +75,7 @@ BASE_CSS = """
 
 def page(title, body, subtitle=None):
     sub = f'<h2>{subtitle}</h2>' if subtitle else ""
-    return render_template_string(f"""
+    return f"""
     <!DOCTYPE html><html><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{title}</title>{BASE_CSS}</head>
@@ -81,7 +84,7 @@ def page(title, body, subtitle=None):
         {sub}
         {body}
     </div></div></body></html>
-    """)
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -146,7 +149,7 @@ def handoff():
     person = names[idx]
     return page("Pass the Device", f"""
         <p class="muted">Pass the device to</p>
-        <h2 style="font-size:1.6rem;">{person}</h2>
+        <h2 style="font-size:1.6rem;">{escape(person)}</h2>
         <a class="btn" href="/pick">It's my turn</a>
     """)
 
@@ -156,8 +159,11 @@ def handoff():
 # ---------------------------------------------------------------------------
 
 def _current_player():
+    """Whose turn it is, or None once every player has finished picking."""
     names = session["player_names"]
     idx = session["current_player_idx"]
+    if idx >= len(names):
+        return None
     return names[idx]
 
 
@@ -168,18 +174,21 @@ def pick():
         return redirect(url_for("setup"))
 
     person = _current_player()
+    if person is None:
+        return redirect(url_for("handoff"))
     my_picks = session["picks"][person]
     pick_num = len(my_picks) + 1
     error = session.pop("error", None)
 
     picks_html = "".join(
-        f'<li><span>{name}</span><span class="total">{value}</span></li>'
+        f'<li><span>{escape(name)}</span><span class="total">{value}</span></li>'
         for name, value in my_picks
     ) or "<li><span class='muted'>No picks yet</span></li>"
 
-    error_html = f'<p class="error">{error}</p>' if error else ""
+    error_html = f'<p class="error">{escape(error)}</p>' if error else ""
 
-    return page(f"{person}'s Turn", f"""
+    safe_person = escape(person)
+    return page(f"{safe_person}'s Turn", f"""
         <div class="question">{q['question_text']}</div>
         <p class="pick-progress">Pick {pick_num}/{q['num_players']}</p>
         <ul class="pick-list">{picks_html}</ul>
@@ -188,7 +197,7 @@ def pick():
           <input type="text" name="typed" placeholder="Enter last name..." autofocus required>
           <button type="submit">Submit</button>
         </form>
-    """, subtitle=f"{person}'s Turn")
+    """, subtitle=f"{safe_person}'s Turn")
 
 
 @app.route("/pick", methods=["POST"])
@@ -216,7 +225,7 @@ def _resolve_and_route(typed):
     result = name_match.resolve_player_fuzzy(con, typed)
 
     if result["status"] == "not_found":
-        session["error"] = f'"{typed}" wasn\'t found. Try the last name.'
+        session["error"] = f'"{escape(typed)}" wasn\'t found. Try the last name.'
         return redirect(url_for("pick"))
 
     if result["status"] == "ambiguous":
@@ -224,14 +233,14 @@ def _resolve_and_route(typed):
         candidates_html = "".join(
             f'''<div class="candidate">
                   <label><input type="radio" name="choice" value="{i}" required style="margin-right:10px;">
-                  <span>{c[1]} — {c[2]}, {c[3]}</span></label>
+                  <span>{escape(c[1])} — {escape(c[2])}, {escape(c[3])}</span></label>
                 </div>'''
             for i, c in enumerate(result["candidates"])
         )
         q = session["question"]
         return page("Which one?", f"""
             <div class="question">{q['question_text']}</div>
-            <p class="muted">Multiple matches for "{typed}" — which one did you mean?</p>
+            <p class="muted">Multiple matches for "{escape(typed)}" — which one did you mean?</p>
             <form method="post" action="/pick_ambiguous">
               {candidates_html}
               <button type="submit">Confirm</button>
@@ -244,11 +253,13 @@ def _resolve_and_route(typed):
 
 def _score_and_route(player_name):
     person = _current_player()
+    if person is None:
+        return redirect(url_for("handoff"))
     q = session["question"]
     already = session["picks"][person]
 
     if any(name == player_name for name, _ in already):
-        session["error"] = f"You've already picked {player_name}."
+        session["error"] = f"You've already picked {escape(player_name)}."
         return redirect(url_for("pick"))
 
     guess = question_gen.evaluate_guess(
@@ -281,6 +292,11 @@ def reveal():
     if not q or not picks:
         return redirect(url_for("setup"))
 
+    # Pass-and-play: no totals are shown until every player has finished.
+    names = session.get("player_names", [])
+    if session.get("current_player_idx", 0) < len(names):
+        return redirect(url_for("handoff"))
+
     results = {name: sum(v for _, v in plist) for name, plist in picks.items()}
     diffs = {name: abs(total - q["target"]) for name, total in results.items()}
     best = min(diffs.values())
@@ -288,18 +304,18 @@ def reveal():
 
     rows = ""
     for name in session["player_names"]:
-        pick_str = ", ".join(f"{n} ({v})" for n, v in picks[name])
+        pick_str = ", ".join(f"{escape(n)} ({v})" for n, v in picks[name])
         is_winner = "winner" if name in winners else ""
         rows += f"""
         <div class="reveal-row {is_winner}">
-          <strong>{name}</strong>{' 🏆' if name in winners else ''}<br>
+          <strong>{escape(name)}</strong>{' 🏆' if name in winners else ''}<br>
           <span class="muted">{pick_str}</span><br>
           <span class="total">Total: {results[name]}</span>
           <span class="muted"> (off by {diffs[name]})</span>
         </div>"""
 
-    winner_line = (f"Winner: {winners.pop()}!" if len(winners) == 1
-                    else f"Joint winners: {', '.join(sorted(winners))}!")
+    winner_line = (f"Winner: {escape(winners.pop())}!" if len(winners) == 1
+                    else f"Joint winners: {escape(', '.join(sorted(winners)))}!")
 
     return page("Reveal", f"""
         <p class="muted">Target was</p>
@@ -331,4 +347,8 @@ def play_again():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    # Bind to localhost only. This is a single-device pass-and-play app, so it
+    # never needs to be reachable from the network -- and host="0.0.0.0" together
+    # with debug=True exposed the Werkzeug debugger, and with it arbitrary code
+    # execution, to everyone on the same Wi-Fi.
+    app.run(debug=True, host="127.0.0.1", port=5000)
