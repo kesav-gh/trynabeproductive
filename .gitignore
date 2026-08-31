@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Cricket database — built locally, far too large for git.
+# See cricket-stats-game/README.md for how to generate it.
+data/
+*.duckdb
+*.duckdb.wal
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
