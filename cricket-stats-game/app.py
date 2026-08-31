@@ -16,20 +16,27 @@ Then open: http://localhost:5000  (or the phone's browser once on Termux)
 Game state lives in the Flask session (a signed cookie) — fine for this
 single-device, pass-and-play use case. The DB connection is opened once
 at startup and reused (DuckDB handles concurrent reads fine).
+
+This app also serves the JSON API the React frontend (../frontend/) talks
+to, registered from api.py under /api/. The API is a separate module with
+its own session key so the two never share or clobber each other's state,
+but it calls into the exact same question_gen.py / name_match.py this
+file uses -- there is only one game engine, not two.
 """
 
-import duckdb
-from flask import Flask, session, redirect, url_for, request
+from flask import session, redirect, url_for, request
 from markupsafe import escape
 
 import question_gen
 import name_match
+# app and con (the Flask app + the one shared DuckDB connection) now live in
+# extensions.py, so this module and api.py -- the new JSON API -- can both
+# use them without opening a second connection to the 1.6 GB database or
+# importing each other in a circle.
+from extensions import app, con
+from api import api_bp
 
-app = Flask(__name__)
-app.secret_key = "cricket-stats-game-local-only"  # local single-device app, not internet-facing
-
-DB_PATH = question_gen.DB_PATH
-con = duckdb.connect(DB_PATH, read_only=True)
+app.register_blueprint(api_bp)
 
 
 # ---------------------------------------------------------------------------
