@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ErrorBanner } from "@/components/ui/ErrorBanner";
@@ -20,6 +20,7 @@ export function Handoff() {
   const [state, setState] = useState<GameState | null>(null);
   const [error, setError] = useState<string | undefined>();
   const navigate = useNavigate();
+  const timedOut = Boolean((useLocation().state as { timedOut?: boolean } | null)?.timedOut);
 
   useEffect(() => {
     gameApi
@@ -83,6 +84,7 @@ export function Handoff() {
             <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-chalk-faint">
               Turn {state.currentPlayerIndex + 1} of {state.totalPlayers}
             </span>
+            {timedOut ? <p className="text-sm font-medium text-ball">Time ran out for the last turn.</p> : null}
             <p className="text-lg text-chalk-dim">Pass the device to</p>
             <h1 className="font-display text-5xl font-extrabold tracking-tight text-mint-400 sm:text-6xl">
               {state.currentPlayerName}

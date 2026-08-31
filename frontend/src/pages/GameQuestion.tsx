@@ -9,6 +9,7 @@ import { ProgressTrack } from "@/components/ui/ProgressTrack";
 import { QuestionCard } from "@/components/game/QuestionCard";
 import { PickList } from "@/components/game/PickList";
 import { CandidateList } from "@/components/game/CandidateList";
+import { cn } from "@/lib/cn";
 import { ApiError, gameApi } from "@/lib/api";
 import type { GameState } from "@/types/api";
 
@@ -19,6 +20,7 @@ export function GameQuestion() {
   const [loadError, setLoadError] = useState<string | undefined>();
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export function GameQuestion() {
           return;
         }
         setState(s);
+        setSecondsLeft(s.turnSecondsRemaining);
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.code === "NO_ACTIVE_GAME") {
@@ -45,12 +48,32 @@ export function GameQuestion() {
 
   const afterResponse = (next: GameState) => {
     setState(next);
+    setSecondsLeft(next.turnSecondsRemaining);
     setTyped("");
     setChosenId(null);
     if (next.turnComplete) {
-      navigate("/handoff");
+      navigate("/handoff", next.pickError?.code === "TURN_EXPIRED" ? { state: { timedOut: true } } : undefined);
     }
   };
+
+  // The countdown shown here ticks locally for a smooth display, but the
+  // backend is what actually enforces expiry -- see game_state.py and
+  // api.py's _expire_turn_if_needed(). Every second this just asks "does
+  // the server still think there's time left?" and once it says no, that
+  // response's own turnComplete flag (not this timer) is what navigates
+  // away, through the exact same path a completed turn already uses.
+  useEffect(() => {
+    if (!state || state.timerSeconds === null || secondsLeft === null) return;
+    if (secondsLeft <= 0) {
+      gameApi.state().then(afterResponse).catch(() => {
+        /* a transient failure here just means the next tick retries */
+      });
+      return;
+    }
+    const id = setTimeout(() => setSecondsLeft((s) => (s === null ? null : s - 1)), 1000);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [secondsLeft, state?.timerSeconds]);
 
   const submit = async () => {
     if (!typed.trim()) {
@@ -178,7 +201,21 @@ export function GameQuestion() {
           <span className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-chalk-faint">
             {state.currentPlayerName} is picking
           </span>
-          <span className="tabular font-mono text-sm text-mint-400">{remaining} left</span>
+          <div className="flex items-center gap-3">
+            {secondsLeft !== null ? (
+              <span
+                className={cn(
+                  "tabular font-mono text-sm font-bold",
+                  secondsLeft <= 5 ? "text-ball" : "text-chalk-dim",
+                )}
+                role="timer"
+                aria-live="polite"
+              >
+                0:{String(secondsLeft).padStart(2, "0")}
+              </span>
+            ) : null}
+            <span className="tabular font-mono text-sm text-mint-400">{remaining} left</span>
+          </div>
         </div>
 
         <QuestionCard question={state.question} />

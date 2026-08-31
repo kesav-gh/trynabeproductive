@@ -7,13 +7,20 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/ErrorBanner";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError, gameApi } from "@/lib/api";
-import type { ModeConfig } from "@/types/api";
+import type { ModeConfig, TimerMode } from "@/types/api";
 
 const MAX_PLAYERS = 8;
 const MIN_PLAYERS = 2;
 
+const TIMER_OPTIONS: { mode: TimerMode; label: string; hint: string }[] = [
+  { mode: "casual", label: "Casual", hint: "No clock" },
+  { mode: "normal", label: "Normal", hint: "30s a turn" },
+  { mode: "blitz", label: "Blitz", hint: "15s a turn" },
+];
+
 export function PlayerSetup() {
   const [names, setNames] = useState<string[]>(["", ""]);
+  const [timerMode, setTimerMode] = useState<TimerMode>("casual");
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [serverError, setServerError] = useState<string | undefined>();
   const [starting, setStarting] = useState(false);
@@ -52,7 +59,7 @@ export function PlayerSetup() {
     setStarting(true);
 
     try {
-      await gameApi.start({ playerNames: filled, mode });
+      await gameApi.start({ playerNames: filled, mode, timerMode });
       navigate("/handoff");
     } catch (err) {
       if (err instanceof ApiError) {
@@ -117,6 +124,35 @@ export function PlayerSetup() {
                 That is the maximum of {MAX_PLAYERS} players.
               </p>
             )}
+          </CardBody>
+        </Card>
+
+        <Card>
+          <CardBody className="flex flex-col gap-3">
+            <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-chalk-faint">
+              Turn timer
+            </span>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Turn timer">
+              {TIMER_OPTIONS.map((opt) => (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => setTimerMode(opt.mode)}
+                  aria-pressed={timerMode === opt.mode}
+                  className={
+                    "flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-4 py-1.5 text-left transition-colors duration-200 " +
+                    (timerMode === opt.mode
+                      ? "border-mint-500/60 bg-mint-500/12"
+                      : "border-seam bg-pitch-850 hover:border-seam-strong")
+                  }
+                >
+                  <span className={timerMode === opt.mode ? "text-sm font-semibold text-mint-400" : "text-sm font-medium text-chalk"}>
+                    {opt.label}
+                  </span>
+                  <span className="text-xs text-chalk-faint">{opt.hint}</span>
+                </button>
+              ))}
+            </div>
           </CardBody>
         </Card>
 

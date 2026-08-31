@@ -38,17 +38,45 @@ export interface PickError {
     | "NOT_FOUND"
     | "DUPLICATE"
     | "REJECTED"
-    | "INVALID_SELECTION";
+    | "INVALID_SELECTION"
+    | "TURN_EXPIRED";
   message: string;
+}
+
+export type Difficulty = "easy" | "normal" | "hard" | "insane";
+export type TimerMode = "casual" | "normal" | "blitz";
+
+export interface HintResult {
+  type: "country" | "role" | "range";
+  text: string;
+}
+
+export interface HintsUsed {
+  country: number;
+  role: number;
+  range: number;
 }
 
 /**
  * The one state shape returned by start / state / pick / ambiguous /
- * next-turn / play-again. Every mutating endpoint returns the full state
- * so the frontend only ever needs one render path: re-render from
+ * next-turn / play-again / hint. Every mutating endpoint returns the full
+ * state so the frontend only ever needs one render path: re-render from
  * whatever came back.
  */
 export interface GameState {
+  gameId: string;
+  status: "in_progress" | "finished";
+  currentRound: number;
+  /** null means unlimited -- Play Again works forever, same as Phase 2. */
+  roundsTotal: number | null;
+  difficulty: Difficulty;
+  timerMode: TimerMode;
+  /** null in Casual mode -- there is no clock. */
+  timerSeconds: number | null;
+  /** Authoritative, server-computed seconds left on the CURRENT player's
+   *  turn. Poll GET /api/game/state to refresh it -- this is a snapshot
+   *  at response time, not a client-side ticking clock. */
+  turnSecondsRemaining: number | null;
   question: Question;
   numPlayers: PickCount;
   currentPlayerIndex: number;
@@ -58,11 +86,24 @@ export interface GameState {
   /** The CURRENT player's own picks only. Nobody else's picks are ever
    *  sent to the browser before the reveal -- see api.py's module docstring. */
   myPicks: LivePick[] | null;
+  myHintsUsed: HintsUsed | null;
   pendingAmbiguous: PendingAmbiguous | null;
-  /** Set only on a /pick or /ambiguous response that was rejected. */
+  cumulativeScores: Record<string, number>;
+  /** Set on a /pick, /ambiguous, /hint or /state response that was
+   *  rejected, or that reports a timed-out turn. */
   pickError: PickError | null;
-  /** True only on a /pick or /ambiguous response that just completed a turn. */
+  /** True only on a response that just completed (or expired) a turn. */
   turnComplete: boolean;
+  /** Only present on a /hint response. */
+  hint: HintResult | null;
+}
+
+export interface ScoreBreakdown {
+  closeness: number;
+  exactBonus: number;
+  speedBonus: number;
+  hintPenalty: number;
+  total: number;
 }
 
 export interface RevealStanding {
@@ -71,16 +112,45 @@ export interface RevealStanding {
   total: number;
   difference: number;
   won: boolean;
+  score: number;
+  scoreBreakdown: ScoreBreakdown;
+  hintsUsed: number;
+}
+
+export interface OverallStanding {
+  participantName: string;
+  score: number;
 }
 
 export interface RevealResult {
   question: Question;
   target: number;
+  currentRound: number;
+  roundsTotal: number | null;
+  isFinalRound: boolean;
   standings: RevealStanding[];
+  /** Preview of cumulative scores including this round -- nothing is
+   *  persisted until Play Again is called. */
+  overallStandings: OverallStanding[];
+}
+
+export interface GameHistory {
+  gameId: string;
+  status: "in_progress" | "finished";
+  currentRound: number;
+  roundsTotal: number | null;
+  cumulativeScores: Record<string, number>;
+  overallStandings: OverallStanding[];
+  rounds: {
+    roundNumber: number;
+    question: Question;
+    standings: RevealStanding[];
+    completedAt: number;
+  }[];
 }
 
 export interface SearchResult {
-  results: PlayerCandidate[];
+  results: (PlayerCandidate & { confidence: number })[];
 }
 
 export interface ModeConfig {
@@ -95,10 +165,14 @@ export type ApiErrorCode =
   | "VALIDATION_ERROR"
   | "NO_FAIR_QUESTION"
   | "NO_ACTIVE_GAME"
+  | "SESSION_EXPIRED"
+  | "INVALID_GAME_STATE"
   | "GAME_COMPLETE"
+  | "GAME_FINISHED"
   | "GAME_IN_PROGRESS"
   | "NO_PENDING_AMBIGUOUS"
   | "NOT_FOUND"
+  | "DATABASE_ERROR"
   | "SERVER_ERROR";
 
 /** Thrown by the api client for every non-2xx response. */

@@ -11,10 +11,13 @@
 
 import {
   ApiError,
+  type Difficulty,
+  type GameHistory,
   type GameState,
   type ModeConfig,
   type RevealResult,
   type SearchResult,
+  type TimerMode,
 } from "@/types/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,6 +55,12 @@ const get = <T>(path: string) => request<T>(path);
 export interface StartGamePayload {
   playerNames: string[];
   mode?: ModeConfig;
+  /** All three are optional and default server-side to "normal" /
+   *  "casual" / unlimited -- omitting them reproduces Phase 2's behaviour
+   *  exactly. Not yet exposed through any UI control; see PlayerSetup.tsx. */
+  difficulty?: Difficulty;
+  timerMode?: TimerMode;
+  roundsTotal?: 1 | 3 | 5 | 10;
 }
 
 export const gameApi = {
@@ -65,9 +74,13 @@ export const gameApi = {
 
   nextTurn: () => post<GameState>("/api/game/next-turn"),
 
+  hint: (type: "country" | "role" | "range") => post<GameState>("/api/game/hint", { type }),
+
   reveal: () => get<RevealResult>("/api/game/reveal"),
 
   playAgain: () => post<GameState>("/api/game/play-again"),
+
+  history: () => get<GameHistory>("/api/game/history"),
 };
 
 export const playerApi = {
