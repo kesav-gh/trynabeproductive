@@ -13,7 +13,7 @@ Run with:  py -m pytest        (from inside cricket-stats-game/)
 import json
 import time
 
-from conftest import eligible_pool, get, play_full_round, play_turn, post, start_game
+from conftest import eligible_pool, get, get_player_ids_by_name, play_full_round, play_turn, post, start_game
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,17 @@ def test_start_game_rejects_duplicate_names(client):
 
 
 def test_start_game_rejects_malformed_body(client):
-    r = client.post("/api/game/start", data="not json", content_type="text/plain")
+    # A valid CSRF token is attached explicitly (Phase 4.4.1 made this
+    # endpoint require one) so this test still reaches -- and exercises
+    # -- the body-validation check it's actually about, rather than
+    # failing on CSRF first.
+    if client.get_cookie("csrf_token") is None:
+        client.get("/api/auth/me")
+    token = client.get_cookie("csrf_token").value
+    r = client.post(
+        "/api/game/start", data="not json", content_type="text/plain",
+        headers={"X-CSRF-Token": token},
+    )
     assert r.status_code == 400
     assert r.get_json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -166,6 +176,51 @@ def test_ambiguous_player_flow(client):
     assert status == 200
     assert body["data"]["pendingAmbiguous"] is None
     assert len(body["data"]["myPicks"]) == 1
+
+
+def test_duplicate_name_disambiguation_commits_the_selected_player(app, client):
+    """Regression test for Phase 3.5: the database has three distinct
+    "Rashid Khan"s (Afghanistan/Nepal/Pakistan). Before this fix, api.py
+    threw away the player_id name_match.py's disambiguation had already
+    identified and re-resolved by name alone -- which could silently
+    commit a DIFFERENT Rashid Khan than the one actually selected. Pinned
+    to a question the real Afghan Rashid Khan satisfies, so a wrong
+    duplicate being committed instead shows up as a rejected pick, not a
+    quieter wrong-value bug."""
+    ids = get_player_ids_by_name(app.con, "Rashid Khan")
+    assert len(ids) >= 3, "fixture assumption moved -- expected 3+ Rashid Khans in the dataset"
+    afghan_id = next(pid for pid, country in ids.items() if country == "Afghanistan")
+
+    start_game(client, ["Alice", "Bob"], mode={"country": "Afghanistan", "roleBucket": "Allrounder", "stat": "wickets"})
+    status, body = post(client, "/api/game/pick", {"typed": "Rashid Khan"})
+    pending = body["data"]["pendingAmbiguous"]
+    assert pending is not None
+    candidate_ids = {c["playerId"] for c in pending["candidates"]}
+    assert afghan_id in candidate_ids
+
+    status, body = post(client, "/api/game/ambiguous", {"playerId": afghan_id})
+    assert body["data"]["pickError"] is None, body["data"]["pickError"]
+    assert len(body["data"]["myPicks"]) == 1
+    assert body["data"]["myPicks"][0]["playerName"] == "Rashid Khan"
+    assert body["data"]["myPicks"][0]["value"] > 0
+
+
+def test_duplicate_name_wrong_candidate_is_correctly_rejected(app, client):
+    """The other half of the same regression: explicitly selecting a
+    DIFFERENT "Rashid Khan" than the question requires must be rejected
+    with a reason naming that duplicate's actual, correct country -- not
+    silently accepted (which would mean the wrong id was evaluated) and
+    not rejected for a made-up reason."""
+    ids = get_player_ids_by_name(app.con, "Rashid Khan")
+    nepal_id = next(pid for pid, country in ids.items() if country == "Nepal")
+
+    start_game(client, ["Alice", "Bob"], mode={"country": "Afghanistan", "roleBucket": "Allrounder", "stat": "wickets"})
+    post(client, "/api/game/pick", {"typed": "Rashid Khan"})
+    status, body = post(client, "/api/game/ambiguous", {"playerId": nepal_id})
+
+    assert body["data"]["pickError"]["code"] == "REJECTED"
+    assert "Nepal" in body["data"]["pickError"]["message"]
+    assert body["data"]["myPicks"] == []
 
 
 def test_ambiguous_invalid_selection(client):
@@ -289,6 +344,23 @@ def test_hint_rejects_unknown_type(client):
     status, body = post(client, "/api/game/hint", {"type": "reveal_everything"})
     assert status == 400
     assert body["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_hint_cannot_be_used_twice_in_the_same_turn(client):
+    start_game(client, ["Alice", "Bob"])
+    status, body = post(client, "/api/game/hint", {"type": "country"})
+    assert status == 200
+    status, body = post(client, "/api/game/hint", {"type": "country"})
+    assert status == 409
+    assert body["error"]["code"] == "HINT_ALREADY_USED"
+    # The other two types are untouched and still usable.
+    status, body = post(client, "/api/game/hint", {"type": "role"})
+    assert status == 200
+
+
+def test_state_exposes_the_hint_penalty_constant(client):
+    data = start_game(client, ["Alice", "Bob"])
+    assert data["hintPenalty"] == 75
 
 
 def test_hints_incur_a_scoring_penalty(client):

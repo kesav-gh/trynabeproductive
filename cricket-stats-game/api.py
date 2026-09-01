@@ -31,6 +31,17 @@ guarantee against a "wrong turn" submission than validating one after
 the fact: there is no field in any request through which a client COULD
 claim to act as a different player, so the failure mode simply has
 nowhere to enter through.
+
+Phase 4.4.1: every state-changing route below (start/pick/ambiguous/
+next-turn/hint/play-again) is wrapped in csrf.protect -- the same
+double-submit-cookie check auth_api.py and profile_api.py already use,
+not a second mechanism. This closes a real gap Phase 4.4 opened: once a
+signed-in user's game gets persisted to Postgres (game_persistence.py),
+a forged cross-site request that rode along on nothing but the
+victim's session cookie could otherwise start or manipulate a game
+under their real account. GET routes (/game/state, /game/reveal,
+/game/history, /player/search) are read-only and stay unprotected, as
+CSRF has nothing to defend there.
 """
 
 import difflib
@@ -38,9 +49,14 @@ import logging
 import random
 
 import duckdb
+import psycopg
 from flask import Blueprint, jsonify, request, session
 
+import appdb
+import auth_api
+import csrf
 import difficulty
+import game_persistence
 import game_state
 import name_match
 import question_gen
@@ -188,6 +204,50 @@ def _json_body():
 
 
 # ---------------------------------------------------------------------------
+# Phase 4.4 persistence -- the session (via game_state.py) stays the
+# single authoritative source of live game state, exactly as before this
+# phase; Postgres is written to at round/game BOUNDARIES only (never per
+# turn or per pick -- see game_persistence.py's module docstring), and
+# only for a game a signed-in user started (state["db_game_id"] is None
+# for every guest game, and nothing below ever runs for one).
+#
+# Two different failure behaviours are deliberate, not inconsistent:
+#   - Game START persistence failing is FATAL (see start_game): nothing
+#     about a brand new game exists yet for the player to lose, so this
+#     is the same "the database isn't available, try again" a signed-in
+#     user already gets from every other auth-adjacent endpoint.
+#   - A round/game COMPLETION persistence failure, once a game is
+#     already under way, is NOT fatal to gameplay (see _try_persist) --
+#     the session is authoritative and already holds the real result;
+#     failing the request here would make an authenticated player's live
+#     game MORE fragile than a guest's for no real benefit. It is never
+#     silent, though: it's logged server-side with the real exception,
+#     and state["db_sync_ok"] flips to False, surfaced to the client as
+#     `historySyncOk` in the state DTO below -- an honest "this round
+#     didn't make it into your permanent history," not a fabricated
+#     success.
+# ---------------------------------------------------------------------------
+
+def _try_persist(state, fn):
+    """Best-effort Postgres write for a game that IS persisted
+    (state["db_game_id"] is not None). `fn` takes one argument, an open
+    connection, and returns whatever the caller needs back (e.g. a new
+    round's id) -- or None, and state["db_sync_ok"] is set to False, if
+    the write failed. Never raises. A guest game (db_game_id is None)
+    never even opens a connection, so this can never be the thing that
+    breaks guest play if Postgres is unreachable."""
+    if state.get("db_game_id") is None:
+        return None
+    try:
+        with appdb.get_connection() as conn:
+            return fn(conn)
+    except (appdb.ConfigError, psycopg.Error):
+        log.exception("Persistence failed for db_game_id=%s", state["db_game_id"])
+        state["db_sync_ok"] = False
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Turn expiry -- the backend is authoritative. Checked at the top of every
 # endpoint that could otherwise let a client act after time actually ran
 # out, using server time against a server-recorded deadline; nothing about
@@ -231,7 +291,26 @@ def _question_dto(q):
     }
 
 
-def _state_dto(state, pick_error=None, turn_complete=False, hint=None):
+def _xp_dto(xp_result):
+    """The minimal shape a "+175 XP" / level-up moment on the frontend
+    needs (Phase 4.5) -- None on every response except the one
+    play-again call that actually just finished an authenticated game
+    (see play_again() below). Never includes the raw per-component
+    breakdown xp_service.py returns internally -- nothing here is a
+    database implementation detail, just the numbers the result screen
+    displays."""
+    if xp_result is None:
+        return None
+    return {
+        "xpAwarded": xp_result["xpAwarded"],
+        "newXp": xp_result["newXp"],
+        "oldLevel": xp_result["oldLevel"],
+        "newLevel": xp_result["newLevel"],
+        "leveledUp": xp_result["leveledUp"],
+    }
+
+
+def _state_dto(state, pick_error=None, turn_complete=False, hint=None, xp_result=None):
     current_name = game_state.current_player_name(state)
 
     my_picks = None
@@ -267,11 +346,21 @@ def _state_dto(state, pick_error=None, turn_complete=False, hint=None):
         "totalPlayers": len(state["player_names"]),
         "myPicks": my_picks,
         "myHintsUsed": my_hints,
+        # Echoed from scoring.py so the frontend never hardcodes this --
+        # if the penalty ever changes, one place changes.
+        "hintPenalty": scoring.HINT_PENALTY,
         "pendingAmbiguous": pending_dto,
         "cumulativeScores": state["cumulative_scores"],
         "pickError": pick_error,
         "turnComplete": turn_complete,
         "hint": hint,
+        # None for a guest game (nothing is ever persisted for one) --
+        # True/False only for a signed-in user's game, see the Phase 4.4
+        # persistence section above for what flips this to False.
+        "historySyncOk": state.get("db_sync_ok") if state.get("db_game_id") is not None else None,
+        # Phase 4.5: only non-null on the one play-again response that
+        # just finished an authenticated game -- see _xp_dto() above.
+        "xp": _xp_dto(xp_result),
     }
 
 
@@ -285,16 +374,23 @@ def _ok(data, status=200):
 # the turn-duration bookkeeping scoring.py needs at reveal time.
 # ---------------------------------------------------------------------------
 
-def _attempt_commit(state, person, player_name):
+def _attempt_commit(state, person, player_name, player_id):
     q = state["question"]
     already = state["picks"][person]
 
     if any(name == player_name for name, _ in already):
         return {"code": "DUPLICATE", "message": f"You've already picked {player_name}."}, False
 
+    # player_id comes straight from whichever name_match.py result the
+    # caller already resolved (an unambiguous match, or an explicit
+    # disambiguation choice) -- passing it lets evaluate_guess() look
+    # this exact player up directly, rather than re-resolving by name
+    # and risking a different player who happens to share the name (a
+    # real, confirmed case in this dataset -- see question_gen.py).
     guess = question_gen.evaluate_guess(
         con, player_name, q["stat"], q["format"],
         country=q["country"], role_bucket=q["role_bucket"],
+        player_id=player_id,
     )
     if not guess["valid"]:
         return {"code": "REJECTED", "message": guess["reason"]}, False
@@ -343,6 +439,12 @@ def _compute_standings(state):
             "score": breakdown["total"],
             "scoreBreakdown": breakdown,
             "hintsUsed": hints_used_count,
+            # Internal-only field (Phase 4.4): _standings_dto below never
+            # forwards this to the client -- it exists purely so
+            # game_persistence.complete_round() can store the same
+            # per-turn duration already used for the speed bonus, without
+            # duplicating a second pass over state["turn_durations"].
+            "duration_seconds": state["turn_durations"].get(name),
         })
     return standings
 
@@ -443,6 +545,7 @@ def _confidence_for(query, name):
 
 @api_bp.route("/game/start", methods=["POST"])
 @json_errors
+@csrf.protect
 def start_game():
     body = _json_body()
 
@@ -504,6 +607,35 @@ def start_game():
         names, mode, difficulty=difficulty_in, timer_mode=timer_mode, rounds_total=rounds_total,
     )
     state["question"] = q
+
+    # Phase 4.4: persist this game only if someone is actually signed in
+    # on this browser. A guest game never calls appdb at all -- not "call
+    # it and ignore failures", genuinely never reaches this branch --  so
+    # guest play can never be affected by Postgres being unreachable.
+    # For a signed-in user, failing to persist a game that's about to be
+    # played is treated as fatal (see the persistence section above):
+    # there's nothing yet for the player to lose, so this is the same
+    # "try again" every other auth-adjacent endpoint already gives.
+    owner_user_id = auth_api.current_user_id_or_none()
+    state["db_game_id"] = None
+    state["db_game_player_ids"] = None
+    state["db_round_id"] = None
+    if owner_user_id is not None:
+        try:
+            with appdb.get_connection() as conn:
+                db_game_id, player_ids, db_round_id = game_persistence.start_persisted_game(
+                    conn, difficulty=difficulty_in, rounds_total=rounds_total,
+                    player_names=names, owner_user_id=owner_user_id,
+                    question=q, target=q["target"],
+                )
+        except (appdb.ConfigError, psycopg.Error):
+            log.exception("Failed to persist new game for user_id=%s", owner_user_id)
+            raise ApiError(503, "DATABASE_ERROR", "Couldn't save this game right now. Try again.")
+        state["db_game_id"] = db_game_id
+        state["db_game_player_ids"] = player_ids
+        state["db_round_id"] = db_round_id
+        state["db_sync_ok"] = True
+
     _save_state(state)
     return _ok(_state_dto(state))
 
@@ -522,6 +654,7 @@ def get_game_state():
 
 @api_bp.route("/game/pick", methods=["POST"])
 @json_errors
+@csrf.protect
 def submit_pick():
     state = _require_state()
 
@@ -564,14 +697,15 @@ def submit_pick():
         return _ok(_state_dto(state))
 
     # Exact match -- commit straight away, same as app.py's _resolve_and_route.
-    player_name = result["player"][1]
-    pick_error, turn_complete = _attempt_commit(state, person, player_name)
+    player_id, player_name = result["player"][0], result["player"][1]
+    pick_error, turn_complete = _attempt_commit(state, person, player_name, player_id)
     _save_state(state)
     return _ok(_state_dto(state, pick_error=pick_error, turn_complete=turn_complete))
 
 
 @api_bp.route("/game/ambiguous", methods=["POST"])
 @json_errors
+@csrf.protect
 def submit_ambiguous():
     state = _require_state()
 
@@ -606,14 +740,15 @@ def submit_ambiguous():
         pick_error = {"code": "INVALID_SELECTION", "message": "Invalid selection — try again."}
         return _ok(_state_dto(state, pick_error=pick_error))
 
-    player_name = match[1]
-    pick_error, turn_complete = _attempt_commit(state, person, player_name)
+    player_id, player_name = match[0], match[1]
+    pick_error, turn_complete = _attempt_commit(state, person, player_name, player_id)
     _save_state(state)
     return _ok(_state_dto(state, pick_error=pick_error, turn_complete=turn_complete))
 
 
 @api_bp.route("/game/next-turn", methods=["POST"])
 @json_errors
+@csrf.protect
 def next_turn():
     state = _require_state()
     if game_state.current_player_name(state) is None:
@@ -625,6 +760,7 @@ def next_turn():
 
 @api_bp.route("/game/hint", methods=["POST"])
 @json_errors
+@csrf.protect
 def request_hint():
     state = _require_state()
 
@@ -642,6 +778,9 @@ def request_hint():
     hint_type = body.get("type")
     if hint_type not in HINT_TYPES:
         raise ApiError(400, "VALIDATION_ERROR", f"type must be one of {HINT_TYPES}.")
+
+    if state["hints_used"][person][hint_type] >= 1:
+        raise ApiError(409, "HINT_ALREADY_USED", f"You've already used the {hint_type} hint this turn.")
 
     text = _build_hint(state, hint_type)
     state["hints_used"][person][hint_type] += 1
@@ -687,6 +826,7 @@ def reveal():
 
 @api_bp.route("/game/play-again", methods=["POST"])
 @json_errors
+@csrf.protect
 def play_again():
     state = _require_state()
 
@@ -698,14 +838,33 @@ def play_again():
     # Commit the round that just finished into history exactly once. A
     # double-submitted play-again lands here with the round ALREADY
     # advanced (is_round_complete would then be False, caught above), so
-    # this can't double-record the same round.
+    # this can't double-record the same round -- and the same guard is
+    # exactly what makes the Postgres writes below single-fire too: see
+    # the Phase 4.4 persistence section for why a repeat can't reach them.
     standings = _compute_standings(state)
     game_state.record_round_history(state, standings)
 
+    if state.get("db_round_id") is not None:
+        _try_persist(
+            state,
+            lambda conn: game_persistence.complete_round(
+                conn, state["db_round_id"], standings, state["db_game_player_ids"],
+            ),
+        )
+
     if not game_state.can_start_next_round(state):
         game_state.finish_game(state)
+        xp_result = None
+        if state.get("db_game_id") is not None:
+            xp_result = _try_persist(
+                state,
+                lambda conn: game_persistence.complete_game(
+                    conn, state["db_game_id"], state["cumulative_scores"], state["db_game_player_ids"],
+                    state["rounds_history"], state["timer_seconds"],
+                ),
+            )
         _save_state(state)
-        return _ok(_state_dto(state))
+        return _ok(_state_dto(state, xp_result=xp_result))
 
     q = difficulty.generate_target_for_difficulty(
         con, num_players=state["mode"]["num_players"], difficulty=state["difficulty"], mode=state["mode"],
@@ -714,6 +873,16 @@ def play_again():
         raise ApiError(422, "NO_FAIR_QUESTION", "Couldn't generate a fair question — try again.")
 
     game_state.start_next_round(state, q)
+
+    if state.get("db_game_id") is not None:
+        new_round_id = _try_persist(
+            state,
+            lambda conn: game_persistence.create_round(
+                conn, state["db_game_id"], state["current_round"], q, q["target"],
+            ),
+        )
+        state["db_round_id"] = new_round_id
+
     _save_state(state)
     return _ok(_state_dto(state))
 

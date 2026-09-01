@@ -70,6 +70,11 @@ export function Handoff() {
   return (
     <AppShell showNav={false}>
       <div className="flex min-h-[70dvh] flex-col items-center justify-center gap-10 text-center">
+        <span className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-chalk-faint">
+          Round {state.currentRound}
+          {state.roundsTotal ? " of " + state.roundsTotal : ""}
+        </span>
+
         {allDone ? (
           <div className="flex flex-col items-center gap-4">
             <span className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-chalk-faint">

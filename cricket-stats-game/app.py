@@ -35,8 +35,14 @@ import name_match
 # importing each other in a circle.
 from extensions import app, con
 from api import api_bp
+from auth_api import auth_bp
+from games_api import games_bp
+from profile_api import profile_bp
 
 app.register_blueprint(api_bp)
+app.register_blueprint(auth_bp)
+app.register_blueprint(profile_bp)
+app.register_blueprint(games_bp)
 
 
 # ---------------------------------------------------------------------------
@@ -220,8 +226,8 @@ def pick_ambiguous_submit():
     if choice is None or not choice.isdigit() or not (0 <= int(choice) < len(candidates)):
         session["error"] = "Invalid selection — try again."
         return redirect(url_for("pick"))
-    player_name = candidates[int(choice)][1]
-    return _score_and_route(player_name)
+    chosen = candidates[int(choice)]
+    return _score_and_route(chosen[1], player_id=chosen[0])
 
 
 def _resolve_and_route(typed):
@@ -255,10 +261,10 @@ def _resolve_and_route(typed):
             </form>
         """)
 
-    return _score_and_route(result["player"][1])
+    return _score_and_route(result["player"][1], player_id=result["player"][0])
 
 
-def _score_and_route(player_name):
+def _score_and_route(player_name, player_id=None):
     person = _current_player()
     if person is None:
         return redirect(url_for("handoff"))
@@ -269,9 +275,15 @@ def _score_and_route(player_name):
         session["error"] = f"You've already picked {escape(player_name)}."
         return redirect(url_for("pick"))
 
+    # player_id comes from whichever name_match.py result the caller
+    # already resolved -- passing it lets evaluate_guess() look this
+    # exact player up directly instead of re-resolving by name, which
+    # can land on the wrong player when several share an identical name
+    # (a real, confirmed case in this dataset -- see question_gen.py).
     guess = question_gen.evaluate_guess(
         con, player_name, q["stat"], q["format"],
         country=q["country"], role_bucket=q["role_bucket"],
+        player_id=player_id,
     )
     if not guess["valid"]:
         session["error"] = guess["reason"]

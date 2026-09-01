@@ -7,8 +7,18 @@
  * cross-origin cookie rules entirely: no CORS headers, no SameSite
  * gymnastics, and the Flask session cookie that holds game state just
  * works, the same way it already does for the original HTML pages.
+ *
+ * Every mutating call attaches the CSRF header the backend now requires
+ * for it (Phase 4.4.1 extended csrf.py's existing double-submit-cookie
+ * check from just the auth endpoints to every state-changing game
+ * route) -- same csrfHeaders() helper authApi.ts and profileApi.ts
+ * already use, not a second CSRF mechanism. GET requests (state,
+ * reveal, history, search) need no token; the backend doesn't require
+ * one for them either.
  */
 
+import { request } from "@/lib/http";
+import { csrfHeaders } from "@/lib/csrf";
 import {
   ApiError,
   type Difficulty,
@@ -20,35 +30,12 @@ import {
   type TimerMode,
 } from "@/types/api";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(path, {
-      credentials: "same-origin",
-      headers: init?.body ? { "Content-Type": "application/json" } : undefined,
-      ...init,
-    });
-  } catch {
-    throw new ApiError(0, "NETWORK_ERROR", "Can't reach the server. Is it running?");
-  }
-
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    throw new ApiError(res.status, "SERVER_ERROR", "The server sent back something unexpected.");
-  }
-
-  if (!res.ok) {
-    const err = (body as { error?: { code?: string; message?: string } }).error;
-    throw new ApiError(res.status, err?.code ?? "UNKNOWN", err?.message ?? "Something went wrong.");
-  }
-
-  return (body as { data: T }).data;
-}
-
 const post = <T>(path: string, payload?: unknown) =>
-  request<T>(path, { method: "POST", body: payload !== undefined ? JSON.stringify(payload) : "{}" });
+  request<T>(path, {
+    method: "POST",
+    body: payload !== undefined ? JSON.stringify(payload) : "{}",
+    headers: csrfHeaders(),
+  });
 
 const get = <T>(path: string) => request<T>(path);
 

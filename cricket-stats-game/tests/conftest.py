@@ -39,9 +39,58 @@ def client():
     return flask_app_module.app.test_client()
 
 
-def post(client, path, body=None):
-    r = client.post(path, data=json.dumps(body if body is not None else {}), content_type="application/json")
+@pytest.fixture
+def app():
+    """The app module itself, for tests that need direct DB access
+    (app.con) rather than going through the HTTP test client."""
+    return flask_app_module
+
+
+def csrf_request(client, method, path, body=None):
+    """Request with the double-submit CSRF header the auth/profile
+    endpoints require (see csrf.py) -- fetches a token via GET
+    /api/auth/me first if this client doesn't have one in its cookie jar
+    yet, exactly like a real page load would before ever submitting a
+    form. `body=None` (as opposed to `{}`) sends no request body at all,
+    for methods like PATCH that need to test a truly empty/missing body."""
+    if client.get_cookie("csrf_token") is None:
+        client.get("/api/auth/me")
+    token = client.get_cookie("csrf_token").value
+    kwargs = {"headers": {"X-CSRF-Token": token}}
+    if body is not None:
+        kwargs["data"] = json.dumps(body)
+        kwargs["content_type"] = "application/json"
+    r = getattr(client, method.lower())(path, **kwargs)
     return r.status_code, r.get_json()
+
+
+def csrf_post(client, path, body=None):
+    """POST with the CSRF header -- see csrf_request. Kept as its own
+    name since most callers only ever POST; `body=None` here means "send
+    an empty {} object", matching how the auth endpoints that take no
+    payload (logout, next-turn, ...) are actually called."""
+    return csrf_request(client, "POST", path, body if body is not None else {})
+
+
+def get_player_ids_by_name(con, name):
+    """{player_id: country} for every row sharing an exact name -- for
+    tests that need to name a SPECIFIC duplicate deterministically,
+    rather than however name_match.py currently ranks them."""
+    rows = con.execute(
+        "SELECT player_id, country FROM players WHERE player_name = ?", [name]
+    ).fetchall()
+    return dict(rows)
+
+
+def post(client, path, body=None):
+    """POSTs with the CSRF header attached -- as of Phase 4.4.1 every
+    mutating endpoint in this app (game included) requires one, so this
+    generic helper (used throughout test_api.py) attaches it
+    automatically rather than making every call site do so itself. A
+    test that specifically wants to exercise CSRF-missing/invalid
+    behavior calls client.post(...) directly instead of this helper --
+    see test_game_csrf.py."""
+    return csrf_post(client, path, body)
 
 
 def get(client, path):
@@ -70,26 +119,23 @@ def play_turn(client, player_name, pool, start_index=0):
     most-prominent candidate. Returns the index into `pool` to resume
     from for the next player.
 
-    A pool entry occasionally still comes back rejected, for two REAL,
-    pre-existing reasons in code this project doesn't modify -- neither
-    is a defect in api.py/game_state.py/scoring.py/difficulty.py:
+    A pool entry occasionally still comes back rejected, for one
+    remaining REAL reason unrelated to the duplicate-name bug Phase 3.5
+    fixed (api.py now threads a specific player_id through from
+    name_match.py's own resolution -- an exact match or an explicit
+    disambiguation choice -- so evaluate_guess() no longer has to
+    re-guess by name alone; see question_gen.py's resolve_player() and
+    resolve_player_by_id()):
 
-    - NOT_FOUND: question_gen.py's pool queries aren't restricted to
-      name_match.py's ALLOWED_COUNTRIES allowlist, so an unconstrained
-      question can include a real, eligible player from a country
-      name_match will never resolve through search.
-    - REJECTED with a wrong country/role in the message: confirmed bug
-      in question_gen.py's own resolve_player() -- it looks a typed name
-      up by an EXACT STRING MATCH with an unranked .fetchone(), and the
-      database contains multiple distinct players sharing an identical
-      name (three different "Rashid Khan"s, for one real example). It can
-      silently return the WRONG one, with the wrong country/role, even
-      though the pool it came from was correctly keyed by player_id.
-      name_match.py's resolve_player_fuzzy() already ranks same-name
-      collisions by prominence for exactly this reason; resolve_player()
-      has no equivalent. Out of scope to fix this phase -- reported
-      separately -- so tests route around it the same way a real player
-      hitting this would: try the next name.
+    - NOT_FOUND, or a fuzzy match landing on an unrelated real player:
+      question_gen.py's pool queries aren't restricted to name_match.py's
+      ALLOWED_COUNTRIES allowlist, so an unconstrained question can
+      include a real, eligible player (e.g. from Papua New Guinea) that
+      name_match will never resolve through search at all -- not even
+      via its fuzzy fallback, since that's filtered by the same
+      allowlist. Pre-existing, out of scope, unrelated to name collisions.
+
+    Either way, this just means trying the next pool entry.
     """
     i = start_index
     while True:

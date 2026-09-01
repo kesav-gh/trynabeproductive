@@ -87,6 +87,9 @@ export interface GameState {
    *  sent to the browser before the reveal -- see api.py's module docstring. */
   myPicks: LivePick[] | null;
   myHintsUsed: HintsUsed | null;
+  /** Points deducted per hint used, echoed from the backend so this
+   *  number is never hardcoded on the frontend. */
+  hintPenalty: number;
   pendingAmbiguous: PendingAmbiguous | null;
   cumulativeScores: Record<string, number>;
   /** Set on a /pick, /ambiguous, /hint or /state response that was
@@ -96,6 +99,24 @@ export interface GameState {
   turnComplete: boolean;
   /** Only present on a /hint response. */
   hint: HintResult | null;
+  /** null for a guest game (nothing is ever persisted for one) --
+   *  true/false only for a signed-in user's game (Phase 4.4); false
+   *  means this round/game's result didn't make it into permanent
+   *  history because of a transient database issue. */
+  historySyncOk: boolean | null;
+  /** Phase 4.5 -- non-null only on the one play-again response that
+   *  just finished an authenticated game. */
+  xp: XpAward | null;
+}
+
+export interface XpAward {
+  /** The net XP this game actually credited -- 0 on a duplicate/retried
+   *  completion request, never a client-suppliable value. */
+  xpAwarded: number;
+  newXp: number;
+  oldLevel: number;
+  newLevel: number;
+  leveledUp: boolean;
 }
 
 export interface ScoreBreakdown {
@@ -171,6 +192,7 @@ export type ApiErrorCode =
   | "GAME_FINISHED"
   | "GAME_IN_PROGRESS"
   | "NO_PENDING_AMBIGUOUS"
+  | "HINT_ALREADY_USED"
   | "NOT_FOUND"
   | "DATABASE_ERROR"
   | "SERVER_ERROR";

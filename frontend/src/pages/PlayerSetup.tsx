@@ -7,7 +7,7 @@ import { Card, CardBody } from "@/components/ui/Card";
 import { ErrorBanner } from "@/components/ui/ErrorBanner";
 import { TextField } from "@/components/ui/TextField";
 import { ApiError, gameApi } from "@/lib/api";
-import type { ModeConfig, TimerMode } from "@/types/api";
+import type { Difficulty, ModeConfig, TimerMode } from "@/types/api";
 
 const MAX_PLAYERS = 8;
 const MIN_PLAYERS = 2;
@@ -18,9 +18,27 @@ const TIMER_OPTIONS: { mode: TimerMode; label: string; hint: string }[] = [
   { mode: "blitz", label: "Blitz", hint: "15s a turn" },
 ];
 
+const DIFFICULTY_OPTIONS: { value: Difficulty; label: string; hint: string }[] = [
+  { value: "easy", label: "Easy", hint: "Familiar players" },
+  { value: "normal", label: "Normal", hint: "Anything goes" },
+  { value: "hard", label: "Hard", hint: "Niche roles" },
+  { value: "insane", label: "Insane", hint: "Test cricket only" },
+];
+
+// undefined = unlimited, the default game (Play Again works forever).
+const ROUNDS_OPTIONS: { value: 1 | 3 | 5 | 10 | undefined; label: string }[] = [
+  { value: undefined, label: "Unlimited" },
+  { value: 1, label: "1 Round" },
+  { value: 3, label: "3 Rounds" },
+  { value: 5, label: "5 Rounds" },
+  { value: 10, label: "10 Rounds" },
+];
+
 export function PlayerSetup() {
   const [names, setNames] = useState<string[]>(["", ""]);
   const [timerMode, setTimerMode] = useState<TimerMode>("casual");
+  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+  const [roundsTotal, setRoundsTotal] = useState<1 | 3 | 5 | 10 | undefined>(undefined);
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [serverError, setServerError] = useState<string | undefined>();
   const [starting, setStarting] = useState(false);
@@ -59,7 +77,7 @@ export function PlayerSetup() {
     setStarting(true);
 
     try {
-      await gameApi.start({ playerNames: filled, mode, timerMode });
+      await gameApi.start({ playerNames: filled, mode, timerMode, difficulty, roundsTotal });
       navigate("/handoff");
     } catch (err) {
       if (err instanceof ApiError) {
@@ -128,30 +146,83 @@ export function PlayerSetup() {
         </Card>
 
         <Card>
-          <CardBody className="flex flex-col gap-3">
-            <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-chalk-faint">
-              Turn timer
-            </span>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Turn timer">
-              {TIMER_OPTIONS.map((opt) => (
-                <button
-                  key={opt.mode}
-                  type="button"
-                  onClick={() => setTimerMode(opt.mode)}
-                  aria-pressed={timerMode === opt.mode}
-                  className={
-                    "flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-4 py-1.5 text-left transition-colors duration-200 " +
-                    (timerMode === opt.mode
-                      ? "border-mint-500/60 bg-mint-500/12"
-                      : "border-seam bg-pitch-850 hover:border-seam-strong")
-                  }
-                >
-                  <span className={timerMode === opt.mode ? "text-sm font-semibold text-mint-400" : "text-sm font-medium text-chalk"}>
+          <CardBody className="flex flex-col gap-5">
+            <div className="flex flex-col gap-3">
+              <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-chalk-faint">
+                Turn timer
+              </span>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Turn timer">
+                {TIMER_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.mode}
+                    type="button"
+                    onClick={() => setTimerMode(opt.mode)}
+                    aria-pressed={timerMode === opt.mode}
+                    className={
+                      "flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-4 py-1.5 text-left transition-colors duration-200 " +
+                      (timerMode === opt.mode
+                        ? "border-mint-500/60 bg-mint-500/12"
+                        : "border-seam bg-pitch-850 hover:border-seam-strong")
+                    }
+                  >
+                    <span className={timerMode === opt.mode ? "text-sm font-semibold text-mint-400" : "text-sm font-medium text-chalk"}>
+                      {opt.label}
+                    </span>
+                    <span className="text-xs text-chalk-faint">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-seam/70 pt-5">
+              <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-chalk-faint">
+                Difficulty
+              </span>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Difficulty">
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setDifficulty(opt.value)}
+                    aria-pressed={difficulty === opt.value}
+                    className={
+                      "flex min-h-[44px] flex-col items-start justify-center rounded-xl border px-4 py-1.5 text-left transition-colors duration-200 " +
+                      (difficulty === opt.value
+                        ? "border-mint-500/60 bg-mint-500/12"
+                        : "border-seam bg-pitch-850 hover:border-seam-strong")
+                    }
+                  >
+                    <span className={difficulty === opt.value ? "text-sm font-semibold text-mint-400" : "text-sm font-medium text-chalk"}>
+                      {opt.label}
+                    </span>
+                    <span className="text-xs text-chalk-faint">{opt.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-seam/70 pt-5">
+              <span className="font-mono text-[0.7rem] uppercase tracking-[0.12em] text-chalk-faint">
+                Rounds
+              </span>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Rounds">
+                {ROUNDS_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() => setRoundsTotal(opt.value)}
+                    aria-pressed={roundsTotal === opt.value}
+                    className={
+                      "flex min-h-[44px] items-center justify-center rounded-xl border px-4 text-sm transition-colors duration-200 " +
+                      (roundsTotal === opt.value
+                        ? "border-mint-500/60 bg-mint-500/12 font-semibold text-mint-400"
+                        : "border-seam bg-pitch-850 font-medium text-chalk hover:border-seam-strong")
+                    }
+                  >
                     {opt.label}
-                  </span>
-                  <span className="text-xs text-chalk-faint">{opt.hint}</span>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
           </CardBody>
         </Card>
