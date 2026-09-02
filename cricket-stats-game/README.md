@@ -19,6 +19,14 @@ once it's set up, no accounts, nothing leaves your device.
   ambiguous names) to a real player.
 - `game.py` — a terminal-only version of the same game, if you don't want
   the browser GUI.
+- `appdb.py`, `migrate.py`, `DATABASE.md` — the foundation for a
+  separate PostgreSQL application database (accounts, persisted games —
+  see [DATABASE.md](DATABASE.md)).
+- `auth.py`, `auth_api.py`, `csrf.py`, `ratelimit.py`, `AUTH.md` —
+  optional accounts on top of that database (see [AUTH.md](AUTH.md)).
+  **Guest play needs none of this** — everything in this section still
+  runs exactly as described below, with no database beyond
+  `data/cricket.duckdb` required, whether or not anyone signs in.
 
 ## Requirements
 

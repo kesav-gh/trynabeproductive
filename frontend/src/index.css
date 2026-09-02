@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   The interface commits to a single dark treatment on purpose -- this is a
+   game played in a room with friends, usually on a phone, and a bright screen
+   passed hand to hand is worse in every way. Every colour is therefore stated
+   explicitly rather than inherited from a light default.
+--------------------------------------------------------------------------- */
+@theme {
+  /* Grounds, darkest to lightest. */
+  --color-pitch-950: #07090d;
+  --color-pitch-900: #0c1016;
+  --color-pitch-850: #12171f;
+  --color-pitch-800: #171d27;
+  --color-pitch-750: #1e2530;
+  --color-pitch-700: #262f3c;
+
+  /* Lines. */
+  --color-seam: #232b37;
+  --color-seam-strong: #35404f;
+
+  /* Text, in descending emphasis. */
+  --color-chalk: #eaeff6;
+  --color-chalk-dim: #9ba7b8;
+  --color-chalk-faint: #6b7789;
+
+  /* Brand: the mint carried over from the original Flask build, saturated up
+     a little so it holds its own as a primary action colour. */
+  --color-mint-400: #5ceeb6;
+  --color-mint-500: #2ee6a0;
+  --color-mint-600: #17c283;
+  --color-mint-700: #0f8f60;
+
+  /* Secondary accents. */
+  --color-ball: #ff6a52;
+  --color-ball-dim: #b83f2d;
+  --color-gold: #ffc24b;
+  --color-sky: #6ad9ff;
+
+  /* Type. */
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-pitch-950);
+    color: var(--color-chalk);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  /* A single, consistent focus treatment. Never removed -- only restyled. */
+  :focus-visible {
+    outline: 2px solid var(--color-sky);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Numbers that sit in columns should line up. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Frosted panel used for the primary cards. The blur is subtle by design:
+     enough to separate the card from the field behind it, not so much that
+     text sitting on it loses contrast. */
+  .glass {
+    background: color-mix(in srgb, var(--color-pitch-850) 88%, transparent);
+    backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid var(--color-seam);
+  }
+
+  /* The ambient field the app sits on: two soft pools of colour, fixed, so
+     scrolling content passes over a stable background. */
+  .field-glow {
+    background-image:
+      radial-gradient(60rem 40rem at 12% -8%, rgba(46, 230, 160, 0.10), transparent 60%),
+      radial-gradient(48rem 34rem at 92% 8%, rgba(255, 106, 82, 0.07), transparent 62%);
+  }
+
+  .fade-rise {
+    animation: fade-rise 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes fade-rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+}

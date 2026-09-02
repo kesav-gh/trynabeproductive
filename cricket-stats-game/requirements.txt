@@ -1,0 +1,20 @@
+# Backend dependencies for cricket-stats-game/.
+#
+# duckdb, Flask, MarkupSafe: the original game engine and HTML/JSON API.
+# pytest: the test suite (tests/).
+# psycopg, python-dotenv: Phase 4.1's application-database foundation
+#   (appdb.py, migrate.py) -- see DATABASE.md.
+# Werkzeug: already a transitive Flask dependency, pinned explicitly
+#   because Phase 4.2 (auth.py) deliberately relies on its
+#   generate_password_hash/check_password_hash (scrypt) for password
+#   storage -- see AUTH.md.
+#
+# Install with:  py -m pip install -r requirements.txt
+
+duckdb==1.5.5
+Flask==3.1.3
+MarkupSafe==3.0.3
+Werkzeug==3.1.8
+pytest==9.1.1
+psycopg[binary]==3.3.5
+python-dotenv==1.2.3

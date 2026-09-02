@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Cricket database — built locally, far too large for git.
+# See cricket-stats-game/README.md for how to generate it.
+data/
+*.duckdb
+*.duckdb.wal
+
+# Local secrets / environment config — real DATABASE_URL and any other
+# credentials live here, never in git. Keep .env.example committed.
+.env
+.env.*
+!.env.example
+
+# Auto-generated local-dev-only Flask secret key (see extensions.py) —
+# unique per checkout, never meant to be shared or committed.
+.flask_secret_key
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

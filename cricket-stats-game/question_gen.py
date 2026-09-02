@@ -359,28 +359,70 @@ def generate_target(con, num_players=None,
 # Guess resolution and scoring
 # ---------------------------------------------------------------------------
 
+def _prominence(con, player_ids):
+    """delivery-appearance counts for player_ids -- a proxy for fame, used
+    below to break ties deterministically among players who share an
+    identical name. Mirrors name_match.py's _prominence_map; duplicated
+    rather than imported, since these two modules are kept independent
+    of each other by design (see name_match.py's own docstring on why
+    resolution and constraint-checking stay separate concerns)."""
+    if not player_ids:
+        return {}
+    placeholders = ",".join("?" for _ in player_ids)
+    rows = con.execute(f"""
+        SELECT player_id, COUNT(*) AS appearances FROM (
+            SELECT batter_id AS player_id FROM deliveries WHERE batter_id IN ({placeholders})
+            UNION ALL
+            SELECT bowler_id AS player_id FROM deliveries WHERE bowler_id IN ({placeholders})
+        ) t
+        GROUP BY player_id
+    """, player_ids + player_ids).fetchall()
+    return dict(rows)
+
+
 def resolve_player(con, name):
     """
     Look up a player by name. Exact match first, then case-insensitive.
     Returns (player_id, player_name, country, playing_role) or None.
 
-    NOTE: this is a plain exact/case-insensitive lookup, not fuzzy typo
-    matching — that's name_match.py's job (next module to build). This
-    function is what name_match.py will eventually hand a cleaned-up
-    name to, or it can be used standalone for now.
+    The database contains multiple distinct players sharing an identical
+    name (three different "Rashid Khan"s, confirmed) -- when that
+    happens, the most prominent one (by delivery-appearance count) wins,
+    deterministically. That is a heuristic, not a guarantee of picking
+    the SPECIFIC player someone meant, which is exactly why
+    evaluate_guess() below prefers to be given a player_id and bypass
+    this function entirely whenever the caller already knows which
+    player they mean -- from a non-ambiguous name_match.py resolution,
+    or from an explicit disambiguation choice. This name-only path
+    remains here as the fallback for callers (or console/debug use) that
+    only ever have a plain string to go on.
     """
     name = name.strip()
-    row = con.execute(
+    rows = con.execute(
         "SELECT player_id, player_name, country, playing_role "
         "FROM players WHERE player_name = ?", [name]
-    ).fetchone()
-    if row:
-        return row
-    row = con.execute(
+    ).fetchall()
+    if not rows:
+        rows = con.execute(
+            "SELECT player_id, player_name, country, playing_role "
+            "FROM players WHERE lower(player_name) = lower(?)", [name]
+        ).fetchall()
+    if not rows:
+        return None
+    if len(rows) == 1:
+        return rows[0]
+    prominence = _prominence(con, [r[0] for r in rows])
+    rows.sort(key=lambda r: prominence.get(r[0], 0), reverse=True)
+    return rows[0]
+
+
+def resolve_player_by_id(con, player_id):
+    """Unambiguous lookup by id. Use this whenever the caller already
+    knows exactly which player is meant -- see evaluate_guess()."""
+    return con.execute(
         "SELECT player_id, player_name, country, playing_role "
-        "FROM players WHERE lower(player_name) = lower(?)", [name]
+        "FROM players WHERE player_id = ?", [player_id]
     ).fetchone()
-    return row
 
 
 def get_player_stat_value(con, player_id, stat, format_):
@@ -443,10 +485,22 @@ def evaluate_guess(
     format_,
     country=None,
     role_bucket=None,
+    player_id=None,
 ):
     """
     Given a resolved player name, check all question constraints
     and calculate the player's actual stat value.
+
+    player_id: pass this whenever the caller already knows exactly which
+    player is meant -- an unambiguous name_match.py resolution, or an
+    explicit disambiguation choice -- and it looks them up directly
+    instead of re-resolving by name. That distinction matters: the
+    database has multiple distinct players sharing an identical name
+    (three different "Rashid Khan"s, confirmed), so re-resolving by name
+    alone can silently land on the WRONG one -- exactly the ambiguity
+    disambiguation exists to resolve, defeated by discarding its answer
+    a moment later. Falls back to name-only resolution when no id is
+    given (also now deterministic -- see resolve_player()).
 
     Returns:
         {"valid": False, "reason": "..."}
@@ -454,7 +508,7 @@ def evaluate_guess(
         {"valid": True, "player_name": "...", "value": N}
     """
 
-    player = resolve_player(con, player_name)
+    player = resolve_player_by_id(con, player_id) if player_id else resolve_player(con, player_name)
 
     if player is None:
         return {
