@@ -33,8 +33,13 @@ DB_PATH = "data/cricket.duckdb"  # relative to cricket-mcp/ — adjust if needed
 # Collapse cricket-mcp's fine-grained playing_role values into the 5 buckets
 # Kesav wants. Edit this dict alone if the bucketing needs to change later.
 ROLE_BUCKETS = {
+    # Opening Batter is deliberately narrow — only real openers satisfy it.
     "Opening Batter": ["Opening Batter"],
-    "Batter": ["Batter", "Top order Batter", "Middle order Batter"],
+    # Batter is broader and includes Opening Batter too — an opener IS a
+    # top-order batter, so should satisfy a generic "Batter" requirement.
+    # This is one-directional: a plain/Middle order Batter does NOT
+    # satisfy an "Opening Batter" requirement (see the bucket above).
+    "Batter": ["Batter", "Top order Batter", "Middle order Batter", "Opening Batter"],
     "Bowler": ["Bowler"],
     "Allrounder": ["Allrounder", "Batting Allrounder", "Bowling Allrounder"],
     "Wicketkeeper Batter": ["Wicketkeeper Batter", "Wicketkeeper"],
@@ -74,14 +79,6 @@ def _role_values(role_bucket):
     if role_bucket is None:
         return None
     return ROLE_BUCKETS[role_bucket]
-
-
-def _role_bucket_for(playing_role):
-    """Reverse lookup: raw playing_role -> which bucket it belongs to (or None)."""
-    for bucket, vals in ROLE_BUCKETS.items():
-        if playing_role in vals:
-            return bucket
-    return None
 
 
 def _format_filter(format_):
@@ -436,113 +433,55 @@ def get_player_stat_value(con, player_id, stat, format_):
     raise ValueError(f"Unknown stat: {stat}")
 
 
-def evaluate_guess(
-    con,
-    player_name,
-    stat,
-    format_,
-    country=None,
-    role_bucket=None,
-):
+def evaluate_guess(con, player_name, stat, format_, country=None, role_bucket=None):
     """
-    Given a resolved player name, check all question constraints
-    and calculate the player's actual stat value.
+    Given a name a player typed, resolve it, check it fits the question's
+    constraints, and score it if it does.
 
-    Returns:
-        {"valid": False, "reason": "..."}
-        {"valid": False, "reason": "...", "player_name": "..."}
-        {"valid": True, "player_name": "...", "value": N}
+    Returns one of:
+      {"valid": False, "reason": "..."}                     — not found
+      {"valid": False, "reason": "...", "player_name": ...}  — found but
+                                                                 doesn't fit
+      {"valid": True, "player_name": ..., "value": N}        — fits, scored
+
+    game.py should show `reason` to the player and let them reselect
+    whenever valid is False.
     """
-
     player = resolve_player(con, player_name)
-
     if player is None:
-        return {
-            "valid": False,
-            "reason": f'"{player_name}" wasn\'t found in the database.',
-        }
+        return {"valid": False, "reason": f'"{player_name}" wasn\'t found in the database.'}
 
     player_id, resolved_name, p_country, p_role = player
-
-    # ---------------------------------------------------------
-    # Country constraint
-    # ---------------------------------------------------------
 
     if country and p_country != country:
         return {
             "valid": False,
             "player_name": resolved_name,
-            "reason": (
-                f"{resolved_name} is from {p_country}, "
-                f"doesn't fit the required constraints "
-                f"(needs {country})."
-            ),
+            "reason": f"{resolved_name} is from {p_country}, doesn't fit the required constraints (needs {country}).",
         }
 
-    # ---------------------------------------------------------
-    # Role constraint
-    # ---------------------------------------------------------
-
     if role_bucket:
-        actual_bucket = _role_bucket_for(p_role)
-
-        if actual_bucket != role_bucket:
+        allowed_roles = _role_values(role_bucket)
+        if p_role not in allowed_roles:
             return {
                 "valid": False,
                 "player_name": resolved_name,
-                "reason": (
-                    f"{resolved_name}'s role is {p_role}, "
-                    f"doesn't fit the required constraints "
-                    f"(needs {role_bucket})."
-                ),
+                "reason": f"{resolved_name}'s role is {p_role}, doesn't fit the required constraints (needs {role_bucket}).",
             }
 
-    # ---------------------------------------------------------
-    # IPL eligibility
-    # ---------------------------------------------------------
+    value = get_player_stat_value(con, player_id, stat, format_)
+    return {"valid": True, "player_name": resolved_name, "value": value}
 
-    if format_ == "IPL":
-        played_ipl = con.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1
-                FROM deliveries d
-                JOIN matches m
-                    ON d.match_id = m.match_id
-                WHERE
-                    m.match_type = 'T20'
-                    AND m.event_name = 'Indian Premier League'
-                    AND (
-                        d.batter_id = ?
-                        OR d.bowler_id = ?
-                    )
-            )
-            """,
-            [player_id, player_id],
-        ).fetchone()[0]
 
-        if not played_ipl:
-            return {
-                "valid": False,
-                "player_name": resolved_name,
-                "reason": (
-                    f"{resolved_name} has not played in the IPL."
-                ),
-            }
+if __name__ == "__main__":
+    con = duckdb.connect(DB_PATH, read_only=True)
 
-    # ---------------------------------------------------------
-    # Calculate real stat
-    # ---------------------------------------------------------
+    print("Generating 3 sample questions...\n")
+    for i in range(3):
+        q = generate_target(con)
+        if q is None:
+            print(f"[{i+1}] Failed to generate — pool too small after 25 attempts")
+            continue
+        print(f"[{i+1}] {q['question_text']}")
 
-    value = get_player_stat_value(
-        con,
-        player_id,
-        stat,
-        format_,
-    )
-
-    return {
-        "valid": True,
-        "player_name": resolved_name,
-        "value": value,
-    }
+    con.close()

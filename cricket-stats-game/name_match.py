@@ -90,6 +90,63 @@ def _country_filter_clause():
     return f"p.country IN ({placeholders})", list(ALLOWED_COUNTRIES)
 
 
+def search_players(con, query, max_results=8, format_=None, country=None, role_bucket=None):
+    """
+    Live-search for autocomplete suggestions — a DELIBERATELY SEPARATE
+    function from resolve_player_fuzzy(). This one IS allowed to filter
+    by the question's constraints, because it's only populating a
+    suggestions list, not the final resolution path — a typed exact name
+    that doesn't fit still goes through resolve_player_fuzzy() ->
+    evaluate_guess() unchanged and gets a proper "doesn't fit" message.
+    Filtering suggestions is good UX; filtering RESOLUTION was the bug.
+
+    Returns a list of (player_id, player_name, country, playing_role),
+    ranked by prominence, empty for a query under 2 characters (avoids
+    an overwhelming/slow single-letter search).
+    """
+    query = query.strip()
+    if len(query) < 2:
+        return []
+
+    # question_gen owns the canonical role/format definitions — import
+    # here (not at module top) to avoid a circular import, since
+    # question_gen doesn't need to know about name_match.
+    import question_gen
+
+    country_clause, params = _country_filter_clause()
+    clauses = [country_clause]
+
+    if country:
+        clauses.append("p.country = ?")
+        params.append(country)
+
+    if role_bucket:
+        role_vals = question_gen.ROLE_BUCKETS[role_bucket]
+        placeholders = ",".join("?" for _ in role_vals)
+        clauses.append(f"p.playing_role IN ({placeholders})")
+        params.extend(role_vals)
+
+    if format_ == "IPL":
+        clauses.append(f"""EXISTS (
+            SELECT 1 FROM deliveries d JOIN matches m ON d.match_id = m.match_id
+            WHERE m.match_type = 'T20' AND m.event_name = ?
+              AND (d.batter_id = p.player_id OR d.bowler_id = p.player_id)
+        )""")
+        params.append(question_gen.IPL_EVENT_NAME)
+
+    clauses.append("lower(p.player_name) LIKE '%' || lower(?) || '%'")
+    params.append(query)
+
+    where_sql = " AND ".join(clauses)
+    rows = con.execute(f"""
+        SELECT p.player_id, p.player_name, p.country, p.playing_role
+        FROM players p WHERE {where_sql}
+        LIMIT 100
+    """, params).fetchall()
+
+    return _rank_by_prominence(con, rows)[:max_results]
+
+
 def resolve_player_fuzzy(con, query, max_candidates=MAX_CANDIDATES):
     """
     Resolve a typed name to a player (or list of candidates, or nothing).

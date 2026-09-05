@@ -19,7 +19,7 @@ at startup and reused (DuckDB handles concurrent reads fine).
 """
 
 import duckdb
-from flask import Flask, session, redirect, url_for, request, render_template_string
+from flask import Flask, session, redirect, url_for, request, render_template_string, jsonify
 
 import question_gen
 import name_match
@@ -29,6 +29,22 @@ app.secret_key = "cricket-stats-game-local-only"  # local single-device app, not
 
 DB_PATH = question_gen.DB_PATH
 con = duckdb.connect(DB_PATH, read_only=True)
+
+
+def _start_fresh_question(names):
+    """
+    Generate a new question and reset per-round state (picks, whose turn
+    it is) — shared by /play_again and /reset_question, since both do
+    the same thing, just triggered from different points in the flow.
+    Returns the new question dict, or None if generation failed.
+    """
+    q = question_gen.generate_target(con)
+    if q is None:
+        return None
+    session["question"] = q
+    session["current_player_idx"] = 0
+    session["picks"] = {name: [] for name in names}
+    return q
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +82,12 @@ BASE_CSS = """
   .reveal-row.winner { border: 1px solid var(--accent); }
   .total { font-weight: 700; color: var(--accent); }
   .center { text-align: center; }
+  #suggestions { margin: -6px 0 12px; }
+  .suggestion { padding: 10px 14px; border-radius: 8px; background: #12151c;
+                border: 1px solid #2a2e38; margin-bottom: 6px; cursor: pointer;
+                display: flex; justify-content: space-between; align-items: center; }
+  .suggestion:active { background: #232732; }
+  .suggestion span:last-child { font-size: 0.8rem; }
 </style>
 """
 
@@ -148,6 +170,10 @@ def handoff():
         <p class="muted">Pass the device to</p>
         <h2 style="font-size:1.6rem;">{person}</h2>
         <a class="btn" href="/pick">It's my turn</a>
+        <a class="btn secondary" href="/reset_question" style="margin-top:8px;"
+           onclick="return confirm('This discards the current question and everyone\\'s picks so far. Continue?')">
+           Reset Question
+        </a>
     """)
 
 
@@ -184,11 +210,72 @@ def pick():
         <p class="pick-progress">Pick {pick_num}/{q['num_players']}</p>
         <ul class="pick-list">{picks_html}</ul>
         {error_html}
-        <form method="post" action="/pick">
-          <input type="text" name="typed" placeholder="Enter last name..." autofocus required>
+        <form method="post" action="/pick" id="pick-form" autocomplete="off">
+          <input type="text" name="typed" id="typed-input" placeholder="Start typing a last name..." autofocus required>
+          <div id="suggestions"></div>
           <button type="submit">Submit</button>
         </form>
+        <a class="btn secondary" href="/reset_question" style="margin-top:8px;"
+           onclick="return confirm('This discards the current question and everyone\\'s picks so far. Continue?')">
+           Reset Question
+        </a>
+        <script>
+        (function() {{
+          const input = document.getElementById('typed-input');
+          const box = document.getElementById('suggestions');
+          let timer = null;
+
+          input.addEventListener('input', function() {{
+            clearTimeout(timer);
+            const q = input.value.trim();
+            if (q.length < 2) {{ box.innerHTML = ''; return; }}
+            timer = setTimeout(function() {{
+              fetch('/api/search_players?q=' + encodeURIComponent(q))
+                .then(r => r.json())
+                .then(function(players) {{
+                  box.innerHTML = players.map(function(p) {{
+                    return '<div class="suggestion" data-name="' + p.name.replace(/"/g,'&quot;') + '">'
+                         + '<span>' + p.name + '</span>'
+                         + '<span class="muted">' + p.country + ', ' + p.role + '</span>'
+                         + '</div>';
+                  }}).join('');
+                  box.querySelectorAll('.suggestion').forEach(function(el) {{
+                    el.addEventListener('click', function() {{
+                      input.value = el.getAttribute('data-name');
+                      box.innerHTML = '';
+                      document.getElementById('pick-form').submit();
+                    }});
+                  }});
+                }});
+            }}, 200);
+          }});
+        }})();
+        </script>
     """, subtitle=f"{person}'s Turn")
+
+
+@app.route("/api/search_players")
+def api_search_players():
+    """
+    Powers the live autocomplete dropdown on the pick page. Filters by
+    the CURRENT question's constraints — safe here because this only
+    populates suggestions; the actual submit still goes through
+    resolve_player_fuzzy() -> evaluate_guess() unchanged, so a typed
+    exact name that doesn't fit still gets a proper rejection message
+    rather than silently vanishing.
+    """
+    q = session.get("question")
+    query = request.args.get("q", "")
+    if not q:
+        return jsonify([])
+
+    results = name_match.search_players(
+        con, query,
+        format_=q["format"], country=q["country"], role_bucket=q["role_bucket"],
+    )
+    return jsonify([
+        {"name": r[1], "country": r[2], "role": r[3]} for r in results
+    ])
 
 
 @app.route("/pick", methods=["POST"])
@@ -317,16 +404,34 @@ def play_again():
     if not names:
         return redirect(url_for("setup"))
 
-    q = question_gen.generate_target(con)
+    q = _start_fresh_question(names)
     if q is None:
         return page("Oops", """
             <p class="error">Couldn't generate a fair question — try again.</p>
             <a class="btn" href="/play_again">Retry</a>
         """)
+    return redirect(url_for("handoff"))
 
-    session["question"] = q
-    session["current_player_idx"] = 0
-    session["picks"] = {name: [] for name in names}
+
+@app.route("/reset_question")
+def reset_question():
+    """
+    Discard the current question (e.g. it's too hard/unfair) and start a
+    fresh one. Per design: this wipes everyone's current-round picks —
+    keeping them would mean judging players against a question that no
+    longer exists, which breaks the "everyone chases the same target"
+    fairness the whole game depends on.
+    """
+    names = session.get("player_names")
+    if not names:
+        return redirect(url_for("setup"))
+
+    q = _start_fresh_question(names)
+    if q is None:
+        return page("Oops", """
+            <p class="error">Couldn't generate a fair question — try again.</p>
+            <a class="btn" href="/reset_question">Retry</a>
+        """)
     return redirect(url_for("handoff"))
 
 
