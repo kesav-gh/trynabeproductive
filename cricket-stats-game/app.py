@@ -88,6 +88,32 @@ BASE_CSS = """
                 display: flex; justify-content: space-between; align-items: center; }
   .suggestion:active { background: #232732; }
   .suggestion span:last-child { font-size: 0.8rem; }
+  .question-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.btn.reset-btn {
+    width: auto;
+    padding: 8px 10px;
+    margin: 0;
+    background: var(--accent);
+    color: #0f1115;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.btn.reset-btn:hover {
+    filter: brightness(1.08);
+}
 </style>
 """
 
@@ -170,10 +196,6 @@ def handoff():
         <p class="muted">Pass the device to</p>
         <h2 style="font-size:1.6rem;">{person}</h2>
         <a class="btn" href="/pick">It's my turn</a>
-        <a class="btn secondary" href="/reset_question" style="margin-top:8px;"
-           onclick="return confirm('This discards the current question and everyone\\'s picks so far. Continue?')">
-           Reset Question
-        </a>
     """)
 
 
@@ -206,7 +228,20 @@ def pick():
     error_html = f'<p class="error">{error}</p>' if error else ""
 
     return page(f"{person}'s Turn", f"""
-        <div class="question">{q['question_text']}</div>
+        <div class="question-header">
+    <h2>Current Question</h2>
+
+    <a class="btn secondary reset-btn"
+       href="/reset_question"
+       title="Generate a New Question"
+       onclick="return confirm('This discards the current question and everyone\\'s picks so far. Continue?')">
+        ↻
+    </a>
+</div>
+
+<div class="question">
+    {q['question_text']}
+</div>
         <p class="pick-progress">Pick {pick_num}/{q['num_players']}</p>
         <ul class="pick-list">{picks_html}</ul>
         {error_html}
@@ -215,10 +250,6 @@ def pick():
           <div id="suggestions"></div>
           <button type="submit">Submit</button>
         </form>
-        <a class="btn secondary" href="/reset_question" style="margin-top:8px;"
-           onclick="return confirm('This discards the current question and everyone\\'s picks so far. Continue?')">
-           Reset Question
-        </a>
         <script>
         (function() {{
           const input = document.getElementById('typed-input');
