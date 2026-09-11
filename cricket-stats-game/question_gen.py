@@ -88,6 +88,13 @@ def _format_filter(format_):
     """
     if format_ == "IPL":
         return "m.match_type = ? AND m.event_name = ?", ["T20", IPL_EVENT_NAME]
+    if format_ == "IT20":
+        # International T20s can be stored as match_type 'IT20' OR as 'T20'
+        # (where event_name is NOT 'Indian Premier League').
+        return (
+            "m.match_type = ? OR (m.match_type = ? AND m.event_name != ?)",
+            ["IT20", "T20", IPL_EVENT_NAME],
+        )
     return "m.match_type = ?", [format_]
 
 
