@@ -90,9 +90,9 @@ def _format_filter(format_):
         return "m.match_type = ? AND m.event_name = ?", ["T20", IPL_EVENT_NAME]
     if format_ == "IT20":
         # International T20s can be stored as match_type 'IT20' OR as 'T20'
-        # (where event_name is NOT 'Indian Premier League').
+        # (where event_name is NOT 'Indian Premier League' or is NULL).
         return (
-            "m.match_type = ? OR (m.match_type = ? AND m.event_name != ?)",
+            "(m.match_type = ? OR (m.match_type = ? AND (m.event_name IS NULL OR m.event_name != ?)))",
             ["IT20", "T20", IPL_EVENT_NAME],
         )
     return "m.match_type = ?", [format_]
@@ -130,8 +130,7 @@ def compute_runs(con, format_, country=None, role_bucket=None):
         SELECT p.player_id, p.player_name, SUM(d.runs_batter) AS value
         FROM deliveries d
         JOIN players p ON d.batter_id = p.player_id
-        JOIN matches m ON d.match_id = m.match_id
-        WHERE {where_sql}
+        WHERE d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
         GROUP BY p.player_id, p.player_name
         HAVING SUM(d.runs_batter) > 0
         ORDER BY value DESC
@@ -146,8 +145,7 @@ def compute_wickets(con, format_, country=None, role_bucket=None):
         SELECT p.player_id, p.player_name, COUNT(*) AS value
         FROM deliveries d
         JOIN players p ON d.bowler_id = p.player_id
-        JOIN matches m ON d.match_id = m.match_id
-        WHERE {where_sql}
+        WHERE d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
           AND d.is_wicket = TRUE
           AND (d.wicket_kind IS NULL OR d.wicket_kind NOT IN ({excl_placeholders}))
         GROUP BY p.player_id, p.player_name
@@ -165,8 +163,7 @@ def compute_centuries(con, format_, country=None, role_bucket=None):
                    SUM(d.runs_batter) AS runs_in_innings
             FROM deliveries d
             JOIN players p ON d.batter_id = p.player_id
-            JOIN matches m ON d.match_id = m.match_id
-            WHERE {where_sql}
+            WHERE d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
             GROUP BY p.player_id, p.player_name, d.match_id, d.innings_number
         )
         SELECT player_id, player_name, COUNT(*) AS value
@@ -188,8 +185,7 @@ def compute_five_fers(con, format_, country=None, role_bucket=None):
                    COUNT(*) AS wkts_in_innings
             FROM deliveries d
             JOIN players p ON d.bowler_id = p.player_id
-            JOIN matches m ON d.match_id = m.match_id
-            WHERE {where_sql}
+            WHERE d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
               AND d.is_wicket = TRUE
               AND (d.wicket_kind IS NULL OR d.wicket_kind NOT IN ({excl_placeholders}))
             GROUP BY p.player_id, p.player_name, d.match_id, d.innings_number
@@ -394,8 +390,9 @@ def get_player_stat_value(con, player_id, stat, format_):
     if stat == "runs":
         query = f"""
             SELECT COALESCE(SUM(d.runs_batter), 0)
-            FROM deliveries d JOIN matches m ON d.match_id = m.match_id
-            WHERE d.batter_id = ? AND {where_sql}
+            FROM deliveries d
+            WHERE d.batter_id = ?
+              AND d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
         """
         return con.execute(query, [player_id] + params).fetchone()[0]
 
@@ -403,8 +400,9 @@ def get_player_stat_value(con, player_id, stat, format_):
         excl_placeholders = ",".join("?" for _ in NON_BOWLER_DISMISSALS)
         query = f"""
             SELECT COUNT(*)
-            FROM deliveries d JOIN matches m ON d.match_id = m.match_id
-            WHERE d.bowler_id = ? AND {where_sql}
+            FROM deliveries d
+            WHERE d.bowler_id = ?
+              AND d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
               AND d.is_wicket = TRUE
               AND (d.wicket_kind IS NULL OR d.wicket_kind NOT IN ({excl_placeholders}))
         """
@@ -414,8 +412,9 @@ def get_player_stat_value(con, player_id, stat, format_):
         query = f"""
             WITH innings_runs AS (
                 SELECT d.match_id, d.innings_number, SUM(d.runs_batter) AS runs_in_innings
-                FROM deliveries d JOIN matches m ON d.match_id = m.match_id
-                WHERE d.batter_id = ? AND {where_sql}
+                FROM deliveries d
+                WHERE d.batter_id = ?
+                  AND d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
                 GROUP BY d.match_id, d.innings_number
             )
             SELECT COUNT(*) FROM innings_runs WHERE runs_in_innings >= 100
@@ -427,8 +426,9 @@ def get_player_stat_value(con, player_id, stat, format_):
         query = f"""
             WITH innings_wkts AS (
                 SELECT d.match_id, d.innings_number, COUNT(*) AS wkts_in_innings
-                FROM deliveries d JOIN matches m ON d.match_id = m.match_id
-                WHERE d.bowler_id = ? AND {where_sql}
+                FROM deliveries d
+                WHERE d.bowler_id = ?
+                  AND d.match_id IN (SELECT match_id FROM matches m WHERE {where_sql})
                   AND d.is_wicket = TRUE
                   AND (d.wicket_kind IS NULL OR d.wicket_kind NOT IN ({excl_placeholders}))
                 GROUP BY d.match_id, d.innings_number

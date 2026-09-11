@@ -56,6 +56,34 @@ ALLOWED_COUNTRIES = {
 }
 
 
+def _resolve_via_aliases(con, query):
+    """Check player_aliases table for an exact alias match.
+
+    Returns (player_id, player_name, country, playing_role) or None.
+    Gracefully returns None if the player_aliases table doesn't exist.
+    """
+    try:
+        row = con.execute("""
+            SELECT pa.player_id, pa.unique_name
+            FROM player_aliases pa
+            WHERE lower(pa.alias_name) = lower(?)
+            LIMIT 1
+        """, [query]).fetchone()
+    except Exception:
+        return None  # table doesn't exist or other DB error
+
+    if not row:
+        return None
+
+    player_id, unique_name = row
+    # Look up the full player record from the players table
+    player = con.execute(
+        "SELECT player_id, player_name, country, playing_role "
+        "FROM players WHERE player_id = ?", [player_id]
+    ).fetchone()
+    return player
+
+
 def _prominence_map(con, ids):
     """dict of player_id -> delivery-appearance count, for the given ids."""
     if not ids:
@@ -107,6 +135,11 @@ def search_players(con, query, max_results=8, format_=None, country=None, role_b
     query = query.strip()
     if len(query) < 2:
         return []
+
+    # Quick alias check — if it's an exact alias, return that player immediately
+    alias_match = _resolve_via_aliases(con, query)
+    if alias_match:
+        return [alias_match]
 
     # question_gen owns the canonical role/format definitions — import
     # here (not at module top) to avoid a circular import, since
@@ -161,6 +194,11 @@ def resolve_player_fuzzy(con, query, max_candidates=MAX_CANDIDATES):
     query = query.strip()
     if not query:
         return {"status": "not_found"}
+
+    # 0. Alias lookup — check player_aliases table first (Cricsheet register)
+    alias_match = _resolve_via_aliases(con, query)
+    if alias_match:
+        return {"status": "exact", "player": alias_match}
 
     country_clause, country_params = _country_filter_clause()
 
