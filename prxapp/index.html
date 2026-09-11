@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#15161A">
+<title>PR Logger</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">PR<span class="brand-accent">.</span>LOG</div>
+  <div class="streak-pill" id="streakPill">
+    <span class="streak-flame">●</span>
+    <span id="streakCount">0</span>
+  </div>
+</header>
+
+<main id="view-today" class="view active">
+  <div class="today-head">
+    <div class="today-label" id="todayWeekdayLabel">Today</div>
+    <div class="today-splitname" id="todaySplitName">No split scheduled</div>
+  </div>
+  <div id="exerciseList" class="exercise-list"></div>
+  <div id="emptyToday" class="empty-state" hidden>
+    <p>Nothing set for today.</p>
+    <p class="empty-sub">Go to Plans and assign an exercise to this weekday.</p>
+  </div>
+</main>
+
+<main id="view-plans" class="view">
+  <div class="section-row">
+    <div class="section-title">Your Plans</div>
+    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
+  </div>
+  <div id="planList" class="plan-list"></div>
+
+  <div class="section-row plan-editor-head" id="planEditorHead" hidden>
+    <div class="section-title" id="planEditorTitle">Edit plan</div>
+    <button class="btn-ghost" id="closePlanEditor">Done</button>
+  </div>
+  <div id="planEditor" class="plan-editor" hidden></div>
+</main>
+
+<main id="view-streak" class="view">
+  <div class="streak-hero">
+    <div class="streak-hero-num" id="streakHeroNum">0</div>
+    <div class="streak-hero-label">day streak</div>
+  </div>
+  <div class="streak-freeze-row">
+    <span id="freezeStatus">No freeze available</span>
+  </div>
+  <div class="section-title">History</div>
+  <div id="historyList" class="history-list"></div>
+</main>
+
+<nav class="dock">
+  <button class="dock-btn active" data-view="today">
+    <span class="dock-icon">◆</span><span>Today</span>
+  </button>
+  <button class="dock-btn" data-view="plans">
+    <span class="dock-icon">▤</span><span>Plans</span>
+  </button>
+  <button class="dock-btn" data-view="streak">
+    <span class="dock-icon">●</span><span>Streak</span>
+  </button>
+</nav>
+
+<!-- Log sheet: bottom sheet, Snapseed-style drag-up panel -->
+<div id="logSheetBackdrop" class="sheet-backdrop"></div>
+<div id="logSheet" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="logSheetTitle">Exercise</div>
+
+  <div class="adjust-row">
+    <div class="adjust-block">
+      <div class="adjust-label">Weight (kg)</div>
+      <div class="adjust-track" id="weightTrack" data-field="weight">
+        <div class="adjust-value" id="weightValue">0</div>
+        <div class="adjust-hint">‹ swipe to adjust ›</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="adjust-row two-up">
+    <div class="adjust-block">
+      <div class="adjust-label">Reps</div>
+      <div class="adjust-track small" id="repsTrack" data-field="reps">
+        <div class="adjust-value" id="repsValue">0</div>
+      </div>
+    </div>
+    <div class="adjust-block">
+      <div class="adjust-label">Sets</div>
+      <div class="adjust-track small" id="setsTrack" data-field="sets">
+        <div class="adjust-value" id="setsValue">0</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn-log" id="confirmLogBtn">Log it</button>
+</div>
+
+<!-- New plan / new exercise mini prompt -->
+<div id="promptBackdrop" class="sheet-backdrop"></div>
+<div id="promptSheet" class="sheet small-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="promptTitle">New</div>
+  <input id="promptInput" class="text-input" type="text" placeholder="Name">
+  <div id="promptExtra"></div>
+  <button class="btn-log" id="promptConfirmBtn">Save</button>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
