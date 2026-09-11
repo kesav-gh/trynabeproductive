@@ -33,13 +33,14 @@ DB_PATH = "data/cricket.duckdb"  # relative to cricket-mcp/ — adjust if needed
 # Collapse cricket-mcp's fine-grained playing_role values into the 5 buckets
 # Kesav wants. Edit this dict alone if the bucketing needs to change later.
 ROLE_BUCKETS = {
-    # Opening Batter is deliberately narrow — only real openers satisfy it.
-    "Opening Batter": ["Opening Batter"],
-    # Batter is broader and includes Opening Batter too — an opener IS a
-    # top-order batter, so should satisfy a generic "Batter" requirement.
+    # Top-order batters: batting positions 1, 2, 3 (mapped to playing_role
+    # "Top order Batter" in Cricsheet data).
+    "Top-order Batter": ["Top order Batter"],
+    # Batter is broader and includes Top order Batter too — a top-order
+    # batter IS a batter, so should satisfy a generic "Batter" requirement.
     # This is one-directional: a plain/Middle order Batter does NOT
-    # satisfy an "Opening Batter" requirement (see the bucket above).
-    "Batter": ["Batter", "Top order Batter", "Middle order Batter", "Opening Batter"],
+    # satisfy a "Top-order Batter" requirement (see the bucket above).
+    "Batter": ["Batter", "Top order Batter", "Middle order Batter"],
     "Bowler": ["Bowler"],
     "Allrounder": ["Allrounder", "Batting Allrounder", "Bowling Allrounder"],
     "Wicketkeeper Batter": ["Wicketkeeper Batter", "Wicketkeeper"],
@@ -65,13 +66,23 @@ COUNTRIES = [
 ]
 
 # For these countries, most people's knowledge goes deep enough for
-# fine-grained roles (Opening Batter, Wicketkeeper Batter, Allrounder).
+# fine-grained roles (Top-order Batter, Wicketkeeper Batter, Allrounder).
 # For everyone else, auto-picked role constraints stay to Batter/Bowler
 # only — "5 wicketkeepers from Sri Lanka" is a much harder ask than
 # "3 bowlers from Sri Lanka". Doesn't affect an explicitly-passed role_bucket,
 # only the random auto-selection.
 DEEP_KNOWLEDGE_COUNTRIES = {"India", "Australia", "England", "Afghanistan"}
 BROAD_ROLES = ["Batter", "Bowler"]
+
+# Regional constraint buckets — SENA (South Africa, England, New Zealand, Australia)
+# Used as an alternative to single-country constraints.
+SENA_COUNTRIES = ["South Africa", "England", "New Zealand", "Australia"]
+
+# Team exclusion constraints — for "excluding India" style questions.
+EXCLUSION_COUNTRIES = ["India", "Australia", "England", "Sri Lanka"]
+EXCLUSION_GROUPS = {
+    "SENA": ["South Africa", "England", "New Zealand", "Australia"],
+}
 
 
 def _role_values(role_bucket):
@@ -98,17 +109,42 @@ def _format_filter(format_):
     return "m.match_type = ?", [format_]
 
 
-def _base_filters(con, format_, country, role_bucket):
+def _base_filters(con, format_, country, role_bucket, exclude_country=None):
     """
     WHERE clause + params for the pool-building queries (format + optional
-    country + optional role bucket). Used only during question generation.
+    country + optional role bucket + optional exclusion). Used only during
+    question generation.
     """
     where_sql, params = _format_filter(format_)
     clauses = [where_sql]
 
-    if country:
+    # Inclusion: filter FOR specific country
+    if country == "Pakistan":
+        # Some Pakistani players are misattributed to 'Portugal' in Cricsheet
+        clauses.append("p.country IN ('Pakistan', 'Portugal')")
+    elif country == "SENA":
+        # SENA regional constraint: South Africa, England, New Zealand, Australia
+        placeholders = ",".join("?" for _ in SENA_COUNTRIES)
+        clauses.append(f"p.country IN ({placeholders})")
+        params.extend(SENA_COUNTRIES)
+    elif country:
         clauses.append("p.country = ?")
         params.append(country)
+
+    # Exclusion: filter OUT specific country or group
+    if exclude_country:
+        if exclude_country in EXCLUSION_GROUPS:
+            excl_vals = EXCLUSION_GROUPS[exclude_country]
+            placeholders = ",".join("?" for _ in excl_vals)
+            clauses.append(f"p.country NOT IN ({placeholders})")
+            params.extend(excl_vals)
+        else:
+            # Single country exclusion — handle Pakistan/Portugal misattribution
+            if exclude_country == "Pakistan":
+                clauses.append("p.country NOT IN ('Pakistan', 'Portugal')")
+            else:
+                clauses.append("p.country != ?")
+                params.append(exclude_country)
 
     role_vals = _role_values(role_bucket)
     if role_vals:
@@ -124,8 +160,8 @@ def _base_filters(con, format_, country, role_bucket):
 # achievable target number. Not used for scoring individual guesses.
 # ---------------------------------------------------------------------------
 
-def compute_runs(con, format_, country=None, role_bucket=None):
-    where_sql, params = _base_filters(con, format_, country, role_bucket)
+def compute_runs(con, format_, country=None, role_bucket=None, exclude_country=None):
+    where_sql, params = _base_filters(con, format_, country, role_bucket, exclude_country)
     query = f"""
         SELECT p.player_id, p.player_name, SUM(d.runs_batter) AS value
         FROM deliveries d
@@ -138,8 +174,8 @@ def compute_runs(con, format_, country=None, role_bucket=None):
     return con.execute(query, params).fetchall()
 
 
-def compute_wickets(con, format_, country=None, role_bucket=None):
-    where_sql, params = _base_filters(con, format_, country, role_bucket)
+def compute_wickets(con, format_, country=None, role_bucket=None, exclude_country=None):
+    where_sql, params = _base_filters(con, format_, country, role_bucket, exclude_country)
     excl_placeholders = ",".join("?" for _ in NON_BOWLER_DISMISSALS)
     query = f"""
         SELECT p.player_id, p.player_name, COUNT(*) AS value
@@ -155,8 +191,8 @@ def compute_wickets(con, format_, country=None, role_bucket=None):
     return con.execute(query, params + list(NON_BOWLER_DISMISSALS)).fetchall()
 
 
-def compute_centuries(con, format_, country=None, role_bucket=None):
-    where_sql, params = _base_filters(con, format_, country, role_bucket)
+def compute_centuries(con, format_, country=None, role_bucket=None, exclude_country=None):
+    where_sql, params = _base_filters(con, format_, country, role_bucket, exclude_country)
     query = f"""
         WITH innings_runs AS (
             SELECT p.player_id, p.player_name, d.match_id, d.innings_number,
@@ -176,8 +212,8 @@ def compute_centuries(con, format_, country=None, role_bucket=None):
     return con.execute(query, params).fetchall()
 
 
-def compute_five_fers(con, format_, country=None, role_bucket=None):
-    where_sql, params = _base_filters(con, format_, country, role_bucket)
+def compute_five_fers(con, format_, country=None, role_bucket=None, exclude_country=None):
+    where_sql, params = _base_filters(con, format_, country, role_bucket, exclude_country)
     excl_placeholders = ",".join("?" for _ in NON_BOWLER_DISMISSALS)
     query = f"""
         WITH innings_wkts AS (
@@ -214,7 +250,7 @@ STAT_FUNCS = {
 
 def generate_target(con, num_players=None,
                      stat=None, format_=None, country=None, role_bucket=None,
-                     max_attempts=25):
+                     exclude_country=None, max_attempts=25):
     """
     Produce a question: constraints + a real, achievable target number X.
 
@@ -241,7 +277,7 @@ def generate_target(con, num_players=None,
     # (near-zero regardless of window size), so block them from
     # auto-selection entirely. Doesn't affect an explicitly-passed
     # role_bucket — only filters what gets randomly picked.
-    BATTING_ROLES = {"Opening Batter", "Batter", "Wicketkeeper Batter"}
+    BATTING_ROLES = {"Top-order Batter", "Batter", "Wicketkeeper Batter"}
     BLOCKED_ROLE_STAT_COMBOS = (
         {(role, "wickets") for role in BATTING_ROLES}
         | {(role, "five_fers") for role in BATTING_ROLES}
@@ -274,26 +310,46 @@ def generate_target(con, num_players=None,
 
         f = format_ or random.choice(FORMATS)
 
-        # Country choices depend on the role now: niche roles (anything
-        # other than plain Batter/Bowler) only get auto-picked alongside
-        # countries the friend group actually knows deeply. Broad roles
-        # (Batter/Bowler) are fine with any major country.
-        if r in BROAD_ROLES:
-            country_choices = list(COUNTRIES)
-        else:
-            country_choices = list(DEEP_KNOWLEDGE_COUNTRIES)
-
-        # Pakistani players have been barred from the IPL since 2008 —
-        # any Pakistan+IPL data in Cricsheet is a tiny 2008-season-only
-        # historical footnote, not a fair/real question.
-        if f == "IPL":
-            country_choices = [c for c in country_choices if c != "Pakistan"]
-
-        c = country if country is not None else (
-            random.choice(country_choices + [None] * 3)  # bias toward "any country"
+        # Decide between inclusion (specific country) and exclusion (excluding teams)
+        # ~30% chance of exclusion when no explicit country is passed
+        use_exclusion = (
+            country is None
+            and random.random() < 0.3
+            and exclude_country is None  # not explicitly set
         )
 
-        pool = STAT_FUNCS[s](con, f, country=c, role_bucket=r)
+        if use_exclusion:
+            # Randomly pick exclusion type: single country or SENA group
+            if random.random() < 0.7:
+                # Single country exclusion
+                excl_pool = [c for c in EXCLUSION_COUNTRIES if c != "Pakistan" or f != "IPL"]
+                curr_exclude_country = random.choice(excl_pool)
+            else:
+                # SENA group exclusion
+                curr_exclude_country = "SENA"
+            c = None  # no inclusion constraint when excluding
+        else:
+            curr_exclude_country = exclude_country  # keep explicit value or None
+            # Country choices depend on the role now: niche roles (anything
+            # other than plain Batter/Bowler) only get auto-picked alongside
+            # countries the friend group actually knows deeply. Broad roles
+            # (Batter/Bowler) are fine with any major country.
+            if r in BROAD_ROLES:
+                country_choices = list(COUNTRIES) + ["SENA"]
+            else:
+                country_choices = list(DEEP_KNOWLEDGE_COUNTRIES) + ["SENA"]
+
+            # Pakistani players have been barred from the IPL since 2008 —
+            # any Pakistan+IPL data in Cricsheet is a tiny 2008-season-only
+            # historical footnote, not a fair/real question.
+            if f == "IPL":
+                country_choices = [cc for cc in country_choices if cc != "Pakistan"]
+
+            c = country if country is not None else (
+                random.choice(country_choices + [None] * 3)  # bias toward "any country"
+            )
+
+        pool = STAT_FUNCS[s](con, f, country=c, role_bucket=r, exclude_country=curr_exclude_country)
 
         # Auto-exclude a random slice of the top of the pool (up to ~20%,
         # capped at 4) so the obvious #1 player isn't always in play.
@@ -303,42 +359,55 @@ def generate_target(con, num_players=None,
         window = _window_size(s, f)
         eligible = pool[exclude_n:exclude_n + window]
 
-        if len(eligible) < num_players:
+        # Afghanistan has smaller player pools — relax the minimum if needed
+        required = num_players
+        if c == "Afghanistan" and len(eligible) < num_players and len(eligible) >= 3:
+            required = 3
+
+        if len(eligible) < required:
             continue  # constraints too narrow, retry with new random combo
 
-        chosen = random.sample(eligible, num_players)
+        chosen = random.sample(eligible, required)
         target = sum(v for _, _, v in chosen)
 
         # Hard floors, scaled by role — this is the actual fix for
         # "sub-5k runs is only feasible for bowlers": the floor now checks
         # the SPECIFIC role chosen, not just "is it Bowler or not". Any
-        # batting-capable role (Opening Batter, Batter, Wicketkeeper
+        # batting-capable role (Top-order Batter, Batter, Wicketkeeper
         # Batter, Allrounder) has to clear a real per-format floor;
         # Bowler stays low on purpose (that's the intentional trick
         # question — bowlers incidentally scoring some runs).
-        if s in ("centuries", "five_fers") and target < num_players * 4:
+        if s in ("centuries", "five_fers") and target < required * 4:
             continue
-        if s == "wickets" and target < num_players * 5:
+        if s == "wickets" and target < required * 5:
             continue
         if s == "runs":
             if r == "Bowler":
-                if target < num_players * 30:  # still needs to be non-trivial
+                if target < required * 30:  # still needs to be non-trivial
                     continue
             else:
                 runs_floor_per_player = {"Test": 400, "ODI": 400, "IT20": 150, "IPL": 300}
-                floor = num_players * runs_floor_per_player.get(f, 200)
+                floor = required * runs_floor_per_player.get(f, 200)
                 if target < floor:
                     continue
 
         constraint_bits = [f"{f}"]
-        if c:
-            constraint_bits.append(f"players from {c}")
+        if curr_exclude_country:
+            if curr_exclude_country == "SENA":
+                constraint_bits.append("excluding SENA countries")
+            else:
+                constraint_bits.append(f"excluding {curr_exclude_country}")
+        elif c:
+            if c == "SENA":
+                constraint_bits.append("players from SENA nations")
+            else:
+                constraint_bits.append(f"players from {c}")
         if r:
             constraint_bits.append(f"role: {r}")
         constraint_bits.append(f"stat: {s.replace('_', ' ')}")
 
         question_text = (
-            f"Name {num_players} players ({', '.join(constraint_bits)}) "
+            f"Name {required} players ({', '.join(constraint_bits)}) "
             f"whose combined {s.replace('_', ' ')} is closest to {target}."
         )
 
@@ -347,8 +416,9 @@ def generate_target(con, num_players=None,
             "stat": s,
             "format": f,
             "country": c,
+            "exclude_country": curr_exclude_country,
             "role_bucket": r,
-            "num_players": num_players,
+            "num_players": required,
             "target": target,
         }
 
@@ -440,7 +510,7 @@ def get_player_stat_value(con, player_id, stat, format_):
     raise ValueError(f"Unknown stat: {stat}")
 
 
-def evaluate_guess(con, player_name, stat, format_, country=None, role_bucket=None):
+def evaluate_guess(con, player_name, stat, format_, country=None, role_bucket=None, exclude_country=None):
     """
     Given a name a player typed, resolve it, check it fits the question's
     constraints, and score it if it does.
@@ -460,12 +530,37 @@ def evaluate_guess(con, player_name, stat, format_, country=None, role_bucket=No
 
     player_id, resolved_name, p_country, p_role = player
 
+    # Check exclusion first — if player is from excluded country/group, reject
+    if exclude_country:
+        is_excluded = False
+        if exclude_country == "SENA":
+            is_excluded = p_country in SENA_COUNTRIES
+        elif exclude_country == "Pakistan":
+            # Handle Pakistan/Portugal misattribution
+            is_excluded = p_country in ("Pakistan", "Portugal")
+        else:
+            is_excluded = p_country == exclude_country
+
+        if is_excluded:
+            if exclude_country == "SENA":
+                reason = f"{resolved_name} is from {p_country} (SENA), which is excluded from this question."
+            else:
+                reason = f"{resolved_name} is from {p_country}, which is excluded from this question."
+            return {"valid": False, "player_name": resolved_name, "reason": reason}
+
+    # Check inclusion — if specific country required, player must be from there
     if country and p_country != country:
-        return {
-            "valid": False,
-            "player_name": resolved_name,
-            "reason": f"{resolved_name} is from {p_country}, doesn't fit the required constraints (needs {country}).",
-        }
+        # Some Pakistani players are misattributed to 'Portugal' in Cricsheet
+        if country == "Pakistan" and p_country == "Portugal":
+            pass  # acceptable
+        elif country == "SENA" and p_country in SENA_COUNTRIES:
+            pass  # acceptable
+        else:
+            return {
+                "valid": False,
+                "player_name": resolved_name,
+                "reason": f"{resolved_name} is from {p_country}, doesn't fit the required constraints (needs {country}).",
+            }
 
     if role_bucket:
         allowed_roles = _role_values(role_bucket)

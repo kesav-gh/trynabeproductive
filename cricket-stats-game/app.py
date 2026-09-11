@@ -38,7 +38,8 @@ def _start_fresh_question(names):
     the same thing, just triggered from different points in the flow.
     Returns the new question dict, or None if generation failed.
     """
-    q = question_gen.generate_target(con)
+    num_players = session.get("num_players")
+    q = question_gen.generate_target(con, num_players=num_players)
     if q is None:
         return None
     session["question"] = q
@@ -314,6 +315,15 @@ BASE_CSS = """
     font-weight: 700;
     color: var(--accent-green);
   }
+
+  .legal-footer {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.5;
+    margin-top: 20px;
+    letter-spacing: 0.3px;
+  }
 </style>
 """
 
@@ -329,7 +339,11 @@ def page(title, body, subtitle=None):
         <h1>Cricket Stats Guessing Game</h1>
         {sub}
         {body}
-    </div></div></body></html>
+    </div>
+    <footer class="legal-footer">
+      Stats reflect 2002–present Cricsheet data. Not affiliated with ICC or official boards.
+    </footer>
+    </div></body></html>
     """)
 
 
@@ -343,10 +357,104 @@ def setup():
         <form method="post" action="/start">
           <p class="muted">Enter each player's name (2 or more), comma-separated.</p>
           <input type="text" name="names" placeholder="Kesav, Sam, ..." required>
+
+          <p class="muted" style="margin-top:18px; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Game Mode</p>
+          
+          <!-- Primary Cards: Blitz & Classic -->
+          <div style="display:flex; gap:12px; margin-bottom:14px;">
+            <label class="mode-tile" style="flex:1; cursor:pointer;">
+              <input type="radio" name="mode" value="blitz" style="display:none;" checked>
+              <div class="mode-tile-inner">
+                <span class="mode-name">Blitz</span>
+                <span class="mode-sub">3 Players</span>
+              </div>
+            </label>
+            <label class="mode-tile" style="flex:1; cursor:pointer;">
+              <input type="radio" name="mode" value="classic" style="display:none;">
+              <div class="mode-tile-inner">
+                <span class="mode-name">Classic</span>
+                <span class="mode-sub">5 Players</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Secondary Centered Pill: Auto / Random -->
+          <div style="display:flex; justify-content:center; margin-bottom:20px;">
+            <label class="mode-pill" style="cursor:pointer;">
+              <input type="radio" name="mode" value="random" style="display:none;">
+              <div class="mode-pill-inner">
+                <span class="pill-text">Auto / Random (3 or 5)</span>
+              </div>
+            </label>
+          </div>
+
           <button type="submit">Start Game</button>
         </form>
-    """)
 
+        <style>
+          /* Blitz & Classic Cards */
+          .mode-tile-inner {
+            background: var(--input-bg);
+            border: 2px solid var(--input-border);
+            border-radius: 14px;
+            padding: 16px 12px;
+            text-align: center;
+            transition: all 0.2s ease;
+          }
+          .mode-tile input:checked + .mode-tile-inner {
+            border-color: var(--accent-green);
+            background: rgba(0, 230, 118, 0.08);
+            box-shadow: 0 0 15px var(--accent-green-glow);
+          }
+          .mode-tile-inner:hover {
+            border-color: rgba(255, 255, 255, 0.2);
+          }
+          .mode-name {
+            display: block;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-primary);
+          }
+          .mode-sub {
+            display: block;
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+          }
+          .mode-tile input:checked + .mode-tile-inner .mode-name {
+            color: var(--accent-green);
+          }
+
+          /* Thin, Secondary Oval Pill */
+          .mode-pill-inner {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--input-border);
+            border-radius: 9999px; /* Fully rounded oval ends */
+            padding: 6px 18px;
+            text-align: center;
+            transition: all 0.2s ease;
+          }
+          .mode-pill-inner:hover {
+            border-color: rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.06);
+          }
+          .pill-text {
+            font-size: 0.82rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            letter-spacing: 0.2px;
+          }
+          .mode-pill input:checked + .mode-pill-inner {
+            border-color: var(--accent-green);
+            background: rgba(0, 230, 118, 0.1);
+            box-shadow: 0 0 10px var(--accent-green-glow);
+          }
+          .mode-pill input:checked + .mode-pill-inner .pill-text {
+            color: var(--accent-green);
+            font-weight: 600;
+          }
+        </style>
+    """)
 
 @app.route("/start", methods=["POST"])
 def start():
@@ -360,7 +468,15 @@ def start():
             </form>
         """)
 
-    q = question_gen.generate_target(con)
+    mode = request.form.get("mode", "random")
+    if mode == "blitz":
+        num_players = 3
+    elif mode == "classic":
+        num_players = 5
+    else:
+        num_players = None  # random
+
+    q = question_gen.generate_target(con, num_players=num_players)
     if q is None:
         return page("Setup", """
             <p class="error">Couldn't generate a fair question — try again.</p>
@@ -368,10 +484,12 @@ def start():
         """)
 
     session["player_names"] = names
+    session["num_players"] = num_players
     session["question"] = q
     session["current_player_idx"] = 0
     session["picks"] = {name: [] for name in names}  # name -> [(player_name, value), ...]
     session["error"] = None
+    session.pop("difficulty", None)  # reset difficulty so Player 1 re-chooses
     return redirect(url_for("handoff"))
 
 
@@ -379,12 +497,18 @@ def start():
 # Pass-and-play handoff checkpoints
 # ---------------------------------------------------------------------------
 
-@app.route("/handoff")
+@app.route("/handoff", methods=["GET", "POST"])
 def handoff():
     names = session.get("player_names")
     idx = session.get("current_player_idx", 0)
     if not names:
         return redirect(url_for("setup"))
+
+    # Handle difficulty selection POST
+    if request.method == "POST":
+        session["difficulty"] = request.form.get("difficulty", "basic")
+        session.modified = True
+        return redirect(url_for("pick"))
 
     if idx >= len(names):
         return page("Reveal Time", """
@@ -393,6 +517,69 @@ def handoff():
         """)
 
     person = names[idx]
+
+    # Player 1's first turn: show difficulty selector if not yet chosen
+    if idx == 0 and "difficulty" not in session:
+        return page("Pass the Device", f"""
+            <p class="muted">Pass the device to</p>
+            <h2 style="font-size:1.6rem;">{person}</h2>
+
+            <p class="muted" style="margin-top:18px; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:600;">Difficulty</p>
+            <form method="post" action="/handoff">
+              <div style="display:flex; gap:12px; margin-bottom:14px;">
+                <label class="diff-tile" style="flex:1; cursor:pointer;">
+                  <input type="radio" name="difficulty" value="basic" style="display:none;" checked>
+                  <div class="diff-tile-inner">
+                    <span class="diff-name">Basic</span>
+                    <span class="diff-sub">Show Stats</span>
+                  </div>
+                </label>
+                <label class="diff-tile" style="flex:1; cursor:pointer;">
+                  <input type="radio" name="difficulty" value="hard" style="display:none;">
+                  <div class="diff-tile-inner">
+                    <span class="diff-name">Hard</span>
+                    <span class="diff-sub">Hide Stats</span>
+                  </div>
+                </label>
+              </div>
+              <button type="submit">It's my turn</button>
+            </form>
+
+            <style>
+              .diff-tile-inner {{
+                background: var(--input-bg);
+                border: 2px solid var(--input-border);
+                border-radius: 14px;
+                padding: 16px 12px;
+                text-align: center;
+                transition: all 0.2s ease;
+              }}
+              .diff-tile input:checked + .diff-tile-inner {{
+                border-color: var(--accent-green);
+                background: rgba(0, 230, 118, 0.08);
+                box-shadow: 0 0 15px var(--accent-green-glow);
+              }}
+              .diff-tile-inner:hover {{
+                border-color: rgba(255, 255, 255, 0.2);
+              }}
+              .diff-name {{
+                display: block;
+                font-weight: 700;
+                font-size: 1.1rem;
+                color: var(--text-primary);
+              }}
+              .diff-sub {{
+                display: block;
+                font-size: 0.82rem;
+                color: var(--text-muted);
+                margin-top: 4px;
+              }}
+              .diff-tile input:checked + .diff-tile-inner .diff-name {{
+                color: var(--accent-green);
+              }}
+            </style>
+        """)
+
     return page("Pass the Device", f"""
         <p class="muted">Pass the device to</p>
         <h2 style="font-size:1.6rem;">{person}</h2>
@@ -420,11 +607,18 @@ def pick():
     my_picks = session["picks"][person]
     pick_num = len(my_picks) + 1
     error = session.pop("error", None)
+    hard_mode = session.get("difficulty") == "hard"
 
-    picks_html = "".join(
-        f'<li><span>{name}</span><span class="total">{value}</span></li>'
-        for name, value in my_picks
-    ) or "<li><span class='muted'>No picks yet</span></li>"
+    if hard_mode:
+        picks_html = "".join(
+            f'<li><span>{name}</span><span class="muted">🔒 Picked</span></li>'
+            for name, _ in my_picks
+        ) or "<li><span class='muted'>No picks yet</span></li>"
+    else:
+        picks_html = "".join(
+            f'<li><span>{name}</span><span class="total">{value}</span></li>'
+            for name, value in my_picks
+        ) or "<li><span class='muted'>No picks yet</span></li>"
 
     error_html = f'<p class="error">{error}</p>' if error else ""
 
@@ -573,6 +767,7 @@ def _score_and_route(player_name):
     guess = question_gen.evaluate_guess(
         con, player_name, q["stat"], q["format"],
         country=q["country"], role_bucket=q["role_bucket"],
+        exclude_country=q.get("exclude_country"),
     )
     if not guess["valid"]:
         session["error"] = guess["reason"]
@@ -658,6 +853,7 @@ def reset_question():
     if not names:
         return redirect(url_for("setup"))
 
+    session.pop("difficulty", None)  # reset difficulty so Player 1 re-chooses
     q = _start_fresh_question(names)
     if q is None:
         return page("Oops", """
