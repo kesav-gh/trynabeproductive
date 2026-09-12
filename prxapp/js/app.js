@@ -23,7 +23,7 @@ function switchView(name) {
   document.querySelector(`.dock-btn[data-view="${name}"]`).classList.add('active');
   if (name === 'today') renderToday();
   if (name === 'plans') { resetPlanEditorState(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard(); }
-  if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); }
+  if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); renderGreeting(); }
 }
 
 /* ================= TODAY ================= */
@@ -190,6 +190,7 @@ async function getProfile() {
 document.getElementById('profileBtn').addEventListener('click', async () => {
   const p = await getProfile();
   if (p) {
+    document.getElementById('pfName').value = p.name || '';
     document.getElementById('pfWeight').value = p.weight;
     document.getElementById('pfHeight').value = p.height;
     document.getElementById('pfAge').value = p.age;
@@ -202,6 +203,7 @@ document.getElementById('setupProfileBtn').addEventListener('click', () => showS
 document.getElementById('profileSaveBtn').addEventListener('click', async () => {
   const profile = {
     id: 1,
+    name: document.getElementById('pfName').value.trim() || '',
     weight: Number(document.getElementById('pfWeight').value),
     height: Number(document.getElementById('pfHeight').value),
     age: Number(document.getElementById('pfAge').value),
@@ -212,14 +214,22 @@ document.getElementById('profileSaveBtn').addEventListener('click', async () => 
   await DB.put('profileStore', profile);
   hideSheet('profileSheet');
   renderNutritionCard();
+  renderGreeting();
 });
 
-/* ================= NUTRITION BLUEPRINT ================= */
+/* ================= GREETING ================= */
+async function renderGreeting() {
+  const profile = await getProfile();
+  const name = (profile && profile.name) ? profile.name : 'Athlete';
+  document.getElementById('greetingBanner').textContent = `Welcome back, ${name} 👋`;
+}
+
+/* ================= MACROCALC (Nutrition Blueprint) ================= */
 document.getElementById('nutritionToggle').addEventListener('click', () => {
   const body = document.getElementById('nutritionBody');
   const chevron = document.getElementById('nutritionChevron');
   body.hidden = !body.hidden;
-  chevron.textContent = body.hidden ? '▾' : '▴';
+  chevron.classList.toggle('expanded', !body.hidden);
 });
 
 function calcBMR(profile) {
@@ -228,7 +238,7 @@ function calcBMR(profile) {
   const female = 10*weight + 6.25*height - 5*age - 161;
   if (gender === 'male') return male;
   if (gender === 'female') return female;
-  return (male + female) / 2; // 'other' -- averaged approximation, not a validated formula
+  return (male + female) / 2;
 }
 
 const PRESET_CONFIG = {
@@ -251,6 +261,26 @@ function computeMacros(profile, presetKey) {
   return { calories, proteinG, fatG, carbsG, tdee };
 }
 
+function renderMacrosForPreset(profile, presetKey) {
+  const m = computeMacros(profile, presetKey);
+  document.getElementById('macroCal').textContent = m.calories.toLocaleString();
+  document.getElementById('macroProtein').textContent = m.proteinG + 'g';
+  document.getElementById('macroCarbs').textContent = m.carbsG + 'g';
+  document.getElementById('macroFat').textContent = m.fatG + 'g';
+}
+
+/* Preset button handlers — attached once, not on every render */
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activePreset = btn.dataset.preset;
+    getProfile().then(profile => {
+      if (profile) renderMacrosForPreset(profile, activePreset);
+    });
+  });
+});
+
 async function renderNutritionCard() {
   const profile = await getProfile();
   const noMsg = document.getElementById('noProfileMsg');
@@ -266,50 +296,37 @@ async function renderNutritionCard() {
 
   renderMacrosForPreset(profile, activePreset);
 
+  /* Sync active state on preset buttons */
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.preset === activePreset);
-    btn.onclick = () => {
-      activePreset = btn.dataset.preset;
-      renderMacrosForPreset(profile, activePreset);
-    };
   });
 
-  // Target mode sliders
-  const curSlider = document.getElementById('curWeightSlider');
+  /* Current weight — read-only badge */
+  document.getElementById('curWeightDisplay').textContent = profile.weight + ' KG';
+
+  /* Target mode sliders */
   const tgtSlider = document.getElementById('tgtWeightSlider');
   const weeksSlider = document.getElementById('weeksSlider');
-  curSlider.value = profile.weight;
   tgtSlider.value = profile.weight;
-  document.getElementById('curWeightLbl').textContent = profile.weight;
   document.getElementById('tgtWeightLbl').textContent = profile.weight;
 
   const updateTarget = () => {
-    document.getElementById('curWeightLbl').textContent = curSlider.value;
     document.getElementById('tgtWeightLbl').textContent = tgtSlider.value;
     document.getElementById('weeksLbl').textContent = weeksSlider.value;
-    const delta = Number(tgtSlider.value) - Number(curSlider.value);
+    const delta = Number(tgtSlider.value) - profile.weight;
     const weeks = Number(weeksSlider.value);
-    const totalKcal = delta * 7700; // ~7700 kcal per kg of fat/tissue change
+    const totalKcal = delta * 7700;
     const dailyDelta = Math.round(totalKcal / (weeks * 7));
-    const bmr = calcBMR({ ...profile, weight: Number(curSlider.value) });
+    const bmr = calcBMR({ ...profile, weight: profile.weight });
     const tdee = bmr * profile.activityLevel;
     const targetCalories = Math.round(tdee + dailyDelta);
     const verb = dailyDelta > 0 ? 'surplus' : dailyDelta < 0 ? 'deficit' : 'maintenance';
     document.getElementById('targetResult').textContent =
       `${targetCalories} kcal/day (${dailyDelta >= 0 ? '+' : ''}${dailyDelta} ${verb}) over ${weeks} weeks`;
   };
-  curSlider.oninput = updateTarget;
   tgtSlider.oninput = updateTarget;
   weeksSlider.oninput = updateTarget;
   updateTarget();
-}
-
-function renderMacrosForPreset(profile, presetKey) {
-  const m = computeMacros(profile, presetKey);
-  document.getElementById('macroCal').textContent = m.calories.toLocaleString();
-  document.getElementById('macroProtein').textContent = m.proteinG + 'g';
-  document.getElementById('macroCarbs').textContent = m.carbsG + 'g';
-  document.getElementById('macroFat').textContent = m.fatG + 'g';
 }
 
 /* ================= STREAK: day-status engine ================= */
@@ -352,7 +369,7 @@ async function updateStreakPill() {
 }
 
 /* ================= STREAK: weekly bar + month calendar ================= */
-let calViewYear, calViewMonth; // month calendar navigation state (0-indexed month)
+let calViewYear, calViewMonth;
 function resetCalendarToCurrentMonth() {
   const now = new Date();
   calViewYear = now.getFullYear();
@@ -378,7 +395,6 @@ async function renderStreak() {
   const data = await computeDayStatuses(todayS);
   document.getElementById('streakCount').textContent = data.streak;
 
-  // Weekly bar -- always this actual calendar week, independent of month nav
   const sunday = new Date(today);
   sunday.setDate(today.getDate() - today.getDay());
   const satEnd = new Date(sunday); satEnd.setDate(sunday.getDate()+6);
@@ -411,7 +427,6 @@ async function renderStreak() {
     weekBar.appendChild(cell);
   }
 
-  // Month calendar -- respects nav state, capped forward at real current month
   document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[calViewMonth]} ${calViewYear}`;
   document.getElementById('calNextBtn').disabled =
     (calViewYear === today.getFullYear() && calViewMonth === today.getMonth());
@@ -419,7 +434,7 @@ async function renderStreak() {
   const grid = document.getElementById('monthGrid');
   grid.innerHTML = '';
   const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
-  const firstWeekdaySun = firstOfMonth.getDay(); // 0=Sun, matches header S M T W T F S
+  const firstWeekdaySun = firstOfMonth.getDay();
   for (let i = 0; i < firstWeekdaySun; i++) {
     const blank = document.createElement('div');
     blank.className = 'cal-cell blank';
@@ -490,11 +505,31 @@ async function renderPlans() {
 
 async function activateOrEditPlan(p, plans) {
   if (!p.isActive) {
-    for (const other of plans) { if (other.isActive) { other.isActive = false; await DB.put('plans', other); } }
+    /* Batch deactivate all other plans, then activate the target */
+    const deactivatePromises = plans
+      .filter(other => other.isActive && other.id !== p.id)
+      .map(other => { other.isActive = false; return DB.put('plans', other); });
+    await Promise.all(deactivatePromises);
+
     p.isActive = true;
     await DB.put('plans', p);
-    resetPlanEditorState();
-    await renderPlans();
+
+    /* Targeted DOM update: update plan rows in-place without full re-render */
+    document.querySelectorAll('.plan-row').forEach(row => {
+      row.classList.remove('is-active');
+      const badge = row.querySelector('.plan-row-badge');
+      if (badge) badge.textContent = 'tap to activate';
+    });
+    const activeRow = [...document.querySelectorAll('.plan-row-name')].find(el => el.textContent === p.name);
+    if (activeRow) {
+      const row = activeRow.closest('.plan-row');
+      if (row) {
+        row.classList.add('is-active');
+        const badge = row.querySelector('.plan-row-badge');
+        if (badge) badge.textContent = 'ACTIVE — tap to edit';
+      }
+    }
+
     await renderPlanSwitcherCard();
     renderToday();
   } else {
@@ -712,7 +747,8 @@ function openExerciseEditSheet(ex, day, plan) {
 (async function init() {
   resetCalendarToCurrentMonth();
   await updateStreakPill();
-  renderStreak(); // default home tab
+  renderStreak();
+  renderGreeting();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
