@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Newsreader:ital,opsz,wght@0,6..72,400..700;1,6..72,400..700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -45,10 +45,7 @@
 
 <!-- ============ TAB 2: TODAY ============ -->
 <main id="view-today" class="view">
-  <div class="today-head">
-    <div class="today-label" id="todayWeekdayLabel">Today</div>
-    <div class="today-splitname" id="todaySplitName">No split scheduled</div>
-  </div>
+  <div class="today-status-bar" id="todayStatusBar">TODAY</div>
   <div id="exerciseList" class="exercise-list"></div>
   <div id="emptyToday" class="empty-state" hidden>
     <p>Nothing set for today.</p>
@@ -129,12 +126,6 @@
     <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
   </div>
   <div id="planList" class="plan-list"></div>
-
-  <div class="section-row plan-editor-head" id="planEditorHead" hidden>
-    <div class="section-title" id="planEditorTitle">Weekly Splits</div>
-    <button class="btn-ghost" id="closePlanEditor">Done</button>
-  </div>
-  <div id="planEditor" class="plan-editor" hidden></div>
 </main>
 
 <nav class="dock">

@@ -11,7 +11,7 @@
   --dv-yellow: #EAB308;
   --dv-red: #EF4444;
   --dv-grey: #6B7280;
-  --font-serif: 'Newsreader', serif;
+  --font-heading: 'Plus Jakarta Sans', system-ui, sans-serif;
   --font-display: 'Space Grotesk', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;
 }
@@ -32,7 +32,7 @@ html, body {
   display: flex; align-items: center; justify-content: space-between;
   padding: max(16px, env(safe-area-inset-top)) 20px 12px;
 }
-.brand { font-family: var(--font-serif); font-weight: 700; font-size: 20px; letter-spacing: 0.02em; }
+.brand { font-family: var(--font-heading); font-weight: 700; font-size: 20px; letter-spacing: 0.02em; }
 .brand-accent { color: var(--accent-pr); }
 .streak-pill {
   display: flex; align-items: center; gap: 6px;
@@ -42,13 +42,13 @@ html, body {
 .streak-flame { color: var(--accent-pr); font-size: 10px; }
 
 /* Views */
-.view { display: none; padding: 8px 20px 120px; }
+.view { display: none; padding: 8px 20px 160px !important; }
 .view.active { display: block; }
 #view-today.active { display: flex; flex-direction: column; min-height: calc(100vh - 180px); }
 
 /* Greeting banner */
 .greeting-banner {
-  font-family: var(--font-serif);
+  font-family: var(--font-heading);
   font-size: 20px;
   font-weight: 500;
   color: var(--text);
@@ -56,9 +56,15 @@ html, body {
 }
 
 /* Today */
-.today-head { margin: 12px 0 0; }
-.today-label { color: var(--text-muted); font-size: 13px; text-transform: lowercase; }
-.today-splitname { font-size: 26px; font-weight: 700; margin-top: 12px; }
+.today-status-bar {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text);
+  padding: 12px 0 20px;
+}
 
 .exercise-list { display: flex; flex-direction: column; gap: 10px; }
 .exercise-card {
@@ -82,24 +88,34 @@ html, body {
 
 /* Plans */
 .section-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; }
-.section-title { font-family: var(--font-serif); font-weight: 700; font-size: 16px; }
+.section-title { font-family: var(--font-heading); font-weight: 700; font-size: 16px; }
 .btn-ghost {
   background: none; border: 1px solid var(--border); color: var(--accent-pr);
   font-family: var(--font-mono); font-size: 13px; padding: 6px 12px;
   border-radius: 14px;
 }
 .plan-list { display: flex; flex-direction: column; gap: 8px; }
-.plan-row {
-  background: var(--surface); border-radius: 14px; padding: 14px 16px;
-  display: flex; justify-content: space-between; align-items: center;
-  border: 1px solid var(--border);
+.plan-card {
+  background: var(--surface); border-radius: 14px;
+  border: 1px solid var(--border); overflow: hidden;
 }
-.plan-row.is-active { border-color: var(--accent-pr); }
-.plan-row-name { font-weight: 700; }
-.plan-row-badge {
+.plan-card.is-active { border-color: var(--accent-pr); }
+.plan-card-head {
+  padding: 14px 16px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.plan-card.is-active .plan-card-head { border-bottom: 1px solid var(--border); }
+.plan-card-name { font-weight: 700; }
+.plan-card-badge {
   font-family: var(--font-mono); font-size: 11px; color: var(--accent-pr);
   border: 1px solid var(--accent-pr); border-radius: 10px; padding: 2px 8px;
 }
+.plan-card-body { padding: 0 16px 16px; display: none; }
+.plan-card.is-expanded .plan-card-body { display: block; }
+.plan-card-done-row {
+  display: flex; justify-content: flex-end; padding: 0 16px 12px;
+}
+.plan-card-actions { display: flex; align-items: center; gap: 10px; }
 .weekday-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 14px 0; }
 .weekday-cell {
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
@@ -149,7 +165,7 @@ html, body {
 .dock-btn {
   background: none; border: none; color: var(--text-muted);
   display: flex; flex-direction: column; align-items: center; gap: 4px;
-  font-family: var(--font-serif); font-size: 12px;
+  font-family: var(--font-heading); font-size: 12px;
   padding: 8px 16px; border-radius: 24px;
   position: relative; z-index: 1;
   transition: color 0.2s ease;
@@ -170,17 +186,19 @@ html, body {
 .sheet-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0.5);
   opacity: 0; pointer-events: none; transition: opacity 0.25s ease;
-  z-index: 10;
+  z-index: 999 !important;
 }
 .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0;
   background: var(--surface-raised);
   border-radius: 24px 24px 0 0;
-  padding: 10px 20px max(24px, env(safe-area-inset-bottom));
+  padding: 10px 20px 140px !important;
   transform: translateY(105%);
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
-  z-index: 11;
+  z-index: 999 !important;
+  max-height: 85vh;
+  overflow-y: auto;
 }
 .sheet.show { transform: translateY(0); }
 .sheet-handle {
@@ -213,7 +231,7 @@ html, body {
 }
 .btn-log:active { transform: scale(0.98); }
 
-.small-sheet { z-index: 12; }
+.small-sheet { z-index: 999 !important; }
 .text-input {
   width: 100%; background: var(--surface); border: 1px solid var(--border);
   border-radius: 12px; padding: 12px 14px; color: var(--text);
@@ -260,7 +278,7 @@ html, body {
 
 /* Streak: month dot calendar */
 .cal-header { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; }
-.cal-month { font-family: var(--font-serif); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.cal-month { font-family: var(--font-heading); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
 .streak-hero-inline { font-family: var(--font-mono); font-size: 13px; }
 .streak-hero-inline #streakHeroNum { color: var(--accent-pr); font-weight: 700; font-size: 16px; }
 .cal-weekday-labels {
@@ -284,7 +302,7 @@ html, body {
 
 /* Delete / edit affordances */
 .trash-btn { color: var(--text-muted); font-family: var(--font-mono); font-size: 14px; padding: 4px 8px; }
-.plan-row-actions { display: flex; align-items: center; gap: 10px; }
+.plan-card-actions { display: flex; align-items: center; gap: 10px; }
 .day-exercise-row { cursor: grab; }
 .day-exercise-row.dragging { opacity: 0.4; }
 .day-exercise-row-main { display: flex; align-items: center; gap: 10px; flex: 1; }
@@ -317,7 +335,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
 .nutrition-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; margin-top: 10px; overflow: hidden; }
 .nutrition-head {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 16px; font-family: var(--font-serif); font-weight: 700; font-size: 14px;
+  padding: 16px; font-family: var(--font-heading); font-weight: 700; font-size: 14px;
   cursor: pointer;
 }
 .nutrition-body { padding: 0 16px 18px; }

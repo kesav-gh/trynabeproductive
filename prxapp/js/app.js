@@ -22,7 +22,7 @@ function switchView(name) {
   document.getElementById(`view-${name}`).classList.add('active');
   document.querySelector(`.dock-btn[data-view="${name}"]`).classList.add('active');
   if (name === 'today') renderToday();
-  if (name === 'plans') { resetPlanEditorState(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard(); }
+  if (name === 'plans') { collapseAllPlans(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard(); }
   if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); renderGreeting(); }
 }
 
@@ -34,25 +34,26 @@ async function getActivePlan() {
 
 async function renderToday() {
   const now = new Date();
-  document.getElementById('todayWeekdayLabel').textContent = WEEKDAY_NAMES[now.getDay()];
+  const dayName = WEEKDAY_NAMES[now.getDay()].toUpperCase();
+  const statusBar = document.getElementById('todayStatusBar');
   const plan = await getActivePlan();
   const list = document.getElementById('exerciseList');
   const empty = document.getElementById('emptyToday');
   list.innerHTML = '';
 
   if (!plan) {
-    document.getElementById('todaySplitName').textContent = 'No active plan';
+    statusBar.textContent = dayName;
     empty.hidden = false;
     return;
   }
   const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
   const day = planDays.find(pd => pd.weekday === now.getDay());
   if (!day) {
-    document.getElementById('todaySplitName').textContent = 'Rest day';
+    statusBar.textContent = dayName + ' ➔ Rest Day';
     empty.hidden = false;
     return;
   }
-  document.getElementById('todaySplitName').textContent = day.label || 'Session';
+  statusBar.textContent = dayName + ' ➔ ' + (day.label || 'Session').toUpperCase();
 
   let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
   exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
@@ -214,14 +215,19 @@ document.getElementById('profileSaveBtn').addEventListener('click', async () => 
   await DB.put('profileStore', profile);
   hideSheet('profileSheet');
   renderNutritionCard();
-  renderGreeting();
+  renderGreeting(profile);
 });
 
 /* ================= GREETING ================= */
-async function renderGreeting() {
-  const profile = await getProfile();
-  const name = (profile && profile.name) ? profile.name : 'Athlete';
-  document.getElementById('greetingBanner').textContent = `Welcome back, ${name} 👋`;
+function renderGreeting(profile) {
+  if (profile && profile.name) {
+    document.getElementById('greetingBanner').textContent = `Welcome back, ${profile.name} 👋`;
+    return;
+  }
+  getProfile().then(p => {
+    const name = (p && p.name) ? p.name : 'Athlete';
+    document.getElementById('greetingBanner').textContent = `Welcome back, ${name} 👋`;
+  });
 }
 
 /* ================= MACROCALC (Nutrition Blueprint) ================= */
@@ -458,11 +464,10 @@ async function renderStreak() {
 }
 
 /* ================= PLANS ================= */
-function resetPlanEditorState() {
-  currentEditingPlan = null;
-  document.getElementById('planEditorHead').hidden = true;
-  document.getElementById('planEditor').hidden = true;
-  document.getElementById('planEditor').innerHTML = '';
+function collapseAllPlans() {
+  document.querySelectorAll('.plan-card').forEach(c => {
+    c.classList.remove('is-expanded');
+  });
 }
 
 async function renderPlanSwitcherCard() {
@@ -478,63 +483,168 @@ async function renderPlans() {
   const list = document.getElementById('planList');
   list.innerHTML = '';
   for (const p of plans) {
-    const row = document.createElement('div');
-    row.className = 'plan-row' + (p.isActive ? ' is-active' : '');
-    row.innerHTML = `
-      <span class="plan-row-name">${escapeHtml(p.name)}</span>
-      <div class="plan-row-actions">
-        <span class="plan-row-badge">${p.isActive ? 'ACTIVE — tap to edit' : 'tap to activate'}</span>
+    const card = document.createElement('div');
+    card.className = 'plan-card' + (p.isActive ? ' is-active' : '');
+    card.dataset.planId = p.id;
+
+    /* Card head row */
+    const head = document.createElement('div');
+    head.className = 'plan-card-head';
+    head.innerHTML = `
+      <span class="plan-card-name">${escapeHtml(p.name)}</span>
+      <div class="plan-card-actions">
+        <span class="plan-card-badge">${p.isActive ? 'ACTIVE' : 'tap to activate'}</span>
         <span class="trash-btn" data-plan-id="${p.id}">🗑</span>
       </div>
     `;
-    row.querySelector('.plan-row-name').addEventListener('click', () => activateOrEditPlan(p, plans));
-    row.querySelector('.plan-row-badge').addEventListener('click', () => activateOrEditPlan(p, plans));
-    row.querySelector('.trash-btn').addEventListener('click', (e) => {
+    head.querySelector('.plan-card-name').addEventListener('click', () => togglePlanCard(p, card, plans));
+    head.querySelector('.plan-card-badge').addEventListener('click', () => togglePlanCard(p, card, plans));
+    head.querySelector('.trash-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openConfirm('Delete plan?', `"${p.name}" and all its splits and exercises will be removed. Logged history stays intact.`, async () => {
         await deletePlanCascade(p.id);
-        resetPlanEditorState();
+        collapseAllPlans();
         await renderPlans();
         await renderPlanSwitcherCard();
         renderToday();
       });
     });
-    list.appendChild(row);
+    card.appendChild(head);
+
+    /* Card body — weekday grid (hidden until expanded) */
+    const body = document.createElement('div');
+    body.className = 'plan-card-body';
+    card.appendChild(body);
+
+    list.appendChild(card);
   }
 }
 
-async function activateOrEditPlan(p, plans) {
+async function togglePlanCard(p, card, plans) {
   if (!p.isActive) {
-    /* Batch deactivate all other plans, then activate the target */
+    /* Activate this plan */
     const deactivatePromises = plans
       .filter(other => other.isActive && other.id !== p.id)
       .map(other => { other.isActive = false; return DB.put('plans', other); });
     await Promise.all(deactivatePromises);
-
     p.isActive = true;
     await DB.put('plans', p);
 
-    /* Targeted DOM update: update plan rows in-place without full re-render */
-    document.querySelectorAll('.plan-row').forEach(row => {
-      row.classList.remove('is-active');
-      const badge = row.querySelector('.plan-row-badge');
+    document.querySelectorAll('.plan-card').forEach(c => {
+      c.classList.remove('is-active');
+      const badge = c.querySelector('.plan-card-badge');
       if (badge) badge.textContent = 'tap to activate';
     });
-    const activeRow = [...document.querySelectorAll('.plan-row-name')].find(el => el.textContent === p.name);
-    if (activeRow) {
-      const row = activeRow.closest('.plan-row');
-      if (row) {
-        row.classList.add('is-active');
-        const badge = row.querySelector('.plan-row-badge');
-        if (badge) badge.textContent = 'ACTIVE — tap to edit';
-      }
-    }
+    card.classList.add('is-active');
+    const badge = card.querySelector('.plan-card-badge');
+    if (badge) badge.textContent = 'ACTIVE';
 
     await renderPlanSwitcherCard();
     renderToday();
-  } else {
-    openPlanEditor(p);
   }
+
+  /* Toggle expansion */
+  const wasExpanded = card.classList.contains('is-expanded');
+  collapseAllPlans();
+  if (!wasExpanded) {
+    card.classList.add('is-expanded');
+    await renderPlanCardEditor(p, card);
+  }
+}
+
+async function renderPlanCardEditor(plan, card) {
+  const body = card.querySelector('.plan-card-body');
+  body.innerHTML = '';
+
+  const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
+  const grid = document.createElement('div');
+  grid.className = 'weekday-grid';
+  for (let w = 0; w < 7; w++) {
+    const day = planDays.find(pd => pd.weekday === w);
+    const cell = document.createElement('div');
+    cell.className = 'weekday-cell' + (day ? ' has-exercises' : '');
+    cell.textContent = WEEKDAY_SHORT[w];
+    cell.addEventListener('click', () => openDayEditorInline(plan, w, day, body));
+    grid.appendChild(cell);
+  }
+  body.appendChild(grid);
+
+  const hint = document.createElement('div');
+  hint.className = 'exercise-meta';
+  hint.style.textAlign = 'center';
+  hint.textContent = 'Tap a day to set its split and exercises';
+  body.appendChild(hint);
+}
+
+async function openDayEditorInline(plan, weekday, existingDay, container) {
+  let day = existingDay;
+  if (!day) {
+    openPrompt('Split name', 'e.g. Push Day', async (label) => {
+      if (!label) return;
+      const id = await DB.add('planDays', { planId: plan.id, weekday, label });
+      day = { id, planId: plan.id, weekday, label };
+      renderDayExerciseEditorInline(day, plan, container);
+    });
+    return;
+  }
+  renderDayExerciseEditorInline(day, plan, container);
+}
+
+async function renderDayExerciseEditorInline(day, plan, container) {
+  let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
+  exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
+
+  /* Remove any existing day editor in this container */
+  container.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
+
+  const box = document.createElement('div');
+  box.className = 'day-exercise-editor';
+
+  const headRow = document.createElement('div');
+  headRow.style.display = 'flex';
+  headRow.style.justifyContent = 'space-between';
+  headRow.style.alignItems = 'flex-start';
+  headRow.innerHTML = `
+    <div>
+      <div class="section-title" style="margin:0;">${escapeHtml(day.label)}</div>
+      <div class="exercise-meta" style="margin-top:2px;">${WEEKDAY_NAMES[day.weekday]}</div>
+    </div>
+    <span class="trash-btn delete-day-split-btn">🗑</span>`;
+  box.appendChild(headRow);
+
+  const rowsWrap = document.createElement('div');
+  rowsWrap.id = 'exRowsWrap';
+  rowsWrap.style.marginTop = '10px';
+  exercises.forEach(ex => rowsWrap.appendChild(buildExerciseRow(ex, day, plan)));
+  box.appendChild(rowsWrap);
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn-ghost';
+  addBtn.style.marginTop = '10px';
+  addBtn.textContent = '+ Add exercise';
+  addBtn.addEventListener('click', () => {
+    openPrompt('Exercise name', 'e.g. Bench Press', async (name) => {
+      if (!name) return;
+      const maxOrder = Math.max(-1, ...exercises.map(e => e.order||0));
+      await DB.add('exercises', { planDayId: day.id, name, targetReps: 8, targetSets: 3, order: maxOrder+1 });
+      renderDayExerciseEditorInline(day, plan, container);
+    });
+  });
+  box.appendChild(addBtn);
+
+  container.appendChild(box);
+
+  box.querySelector('.delete-day-split-btn').addEventListener('click', () => {
+    openConfirm('Delete this split?', `"${day.label}" and its exercises will be removed from ${WEEKDAY_NAMES[day.weekday]}.`, async () => {
+      for (const ex of exercises) await DB.delete('exercises', ex.id);
+      await DB.delete('planDays', day.id);
+      box.remove();
+      /* Re-render the card's weekday grid */
+      const body = container;
+      body.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
+      renderPlanCardEditor(plan, body.closest('.plan-card'));
+    });
+  });
 }
 
 async function deletePlanCascade(planId) {
@@ -560,102 +670,6 @@ document.getElementById('newPlanBtn').addEventListener('click', () => {
 
 let currentEditingPlan = null;
 
-async function openPlanEditor(plan) {
-  currentEditingPlan = plan;
-  document.getElementById('planEditorTitle').textContent = 'Weekly Splits';
-  document.getElementById('planEditorHead').hidden = false;
-  const editor = document.getElementById('planEditor');
-  editor.hidden = false;
-  editor.innerHTML = '';
-
-  const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
-  const grid = document.createElement('div');
-  grid.className = 'weekday-grid';
-  for (let w = 0; w < 7; w++) {
-    const day = planDays.find(pd => pd.weekday === w);
-    const cell = document.createElement('div');
-    cell.className = 'weekday-cell' + (day ? ' has-exercises' : '');
-    cell.textContent = WEEKDAY_SHORT[w];
-    cell.addEventListener('click', () => openDayEditor(plan, w, day));
-    grid.appendChild(cell);
-  }
-  editor.appendChild(grid);
-  const hint = document.createElement('div');
-  hint.className = 'exercise-meta';
-  hint.style.textAlign = 'center';
-  hint.textContent = 'Tap a day to set its split and exercises';
-  editor.appendChild(hint);
-}
-
-document.getElementById('closePlanEditor').addEventListener('click', resetPlanEditorState);
-
-async function openDayEditor(plan, weekday, existingDay) {
-  let day = existingDay;
-  if (!day) {
-    openPrompt('Split name', 'e.g. Push Day', async (label) => {
-      if (!label) return;
-      const id = await DB.add('planDays', { planId: plan.id, weekday, label });
-      day = { id, planId: plan.id, weekday, label };
-      renderDayExerciseEditor(day, plan);
-    });
-    return;
-  }
-  renderDayExerciseEditor(day, plan);
-}
-
-async function renderDayExerciseEditor(day, plan) {
-  const editor = document.getElementById('planEditor');
-  let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
-  exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
-
-  const box = document.createElement('div');
-  box.className = 'day-exercise-editor';
-
-  const headRow = document.createElement('div');
-  headRow.style.display = 'flex';
-  headRow.style.justifyContent = 'space-between';
-  headRow.style.alignItems = 'flex-start';
-  headRow.innerHTML = `
-    <div>
-      <div class="section-title" style="margin:0;">${escapeHtml(day.label)} — Workout Split</div>
-      <div class="exercise-meta" style="margin-top:2px;">${WEEKDAY_NAMES[day.weekday]}</div>
-    </div>
-    <span class="trash-btn" id="deleteDaySplitBtn">🗑</span>`;
-  box.appendChild(headRow);
-
-  const rowsWrap = document.createElement('div');
-  rowsWrap.id = 'exRowsWrap';
-  rowsWrap.style.marginTop = '10px';
-  exercises.forEach(ex => rowsWrap.appendChild(buildExerciseRow(ex, day, plan)));
-  box.appendChild(rowsWrap);
-
-  const addBtn = document.createElement('button');
-  addBtn.className = 'btn-ghost';
-  addBtn.style.marginTop = '10px';
-  addBtn.textContent = '+ Add exercise';
-  addBtn.addEventListener('click', () => {
-    openPrompt('Exercise name', 'e.g. Bench Press', async (name) => {
-      if (!name) return;
-      const maxOrder = Math.max(-1, ...exercises.map(e => e.order||0));
-      await DB.add('exercises', { planDayId: day.id, name, targetReps: 8, targetSets: 3, order: maxOrder+1 });
-      renderDayExerciseEditor(day, plan);
-    });
-  });
-  box.appendChild(addBtn);
-
-  editor.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
-  editor.appendChild(box);
-
-  document.getElementById('deleteDaySplitBtn').addEventListener('click', () => {
-    openConfirm('Delete this split?', `"${day.label}" and its exercises will be removed from ${WEEKDAY_NAMES[day.weekday]}.`, async () => {
-      for (const ex of exercises) await DB.delete('exercises', ex.id);
-      await DB.delete('planDays', day.id);
-      box.remove();
-      openPlanEditor(plan);
-    });
-  });
-}
-
 function buildExerciseRow(ex, day, plan) {
   const row = document.createElement('div');
   row.className = 'day-exercise-row';
@@ -678,7 +692,8 @@ function buildExerciseRow(ex, day, plan) {
     e.stopPropagation();
     openConfirm('Remove exercise?', `"${ex.name}" will be removed from this split.`, async () => {
       await DB.delete('exercises', ex.id);
-      renderDayExerciseEditor(day, plan);
+      const container = row.closest('.plan-card-body');
+      renderDayExerciseEditorInline(day, plan, container);
     });
   });
   attachDragReorder(row);
@@ -739,7 +754,8 @@ function openExerciseEditSheet(ex, day, plan) {
     ex.targetSets = Number(document.getElementById('editExSets').value) || ex.targetSets;
     await DB.put('exercises', ex);
     hideSheet('editExSheet');
-    renderDayExerciseEditor(day, plan);
+    const container = document.querySelector('.plan-card.is-expanded .plan-card-body');
+    if (container) renderDayExerciseEditorInline(day, plan, container);
   };
 }
 
