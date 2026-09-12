@@ -176,3 +176,72 @@ html, body {
   border-radius: 12px; padding: 12px 14px; color: var(--text);
   font-family: var(--font-display); font-size: 15px; margin-bottom: 14px;
 }
+
+/* ---------- Streak: weekly connected bar ---------- */
+.weekbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 20px 6px 10px; margin-top: 4px;
+}
+.weekbar-day { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; }
+.weekbar-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 8px; }
+.weekbar-node {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-family: var(--font-mono); z-index: 2;
+  border: 2px solid var(--border); background: var(--bg); color: var(--text-muted);
+}
+.weekbar-node.attended { background: var(--accent-pr); border-color: var(--accent-pr); color: #15161A; }
+.weekbar-node.pr { background: #FFE08A; border-color: #FFE08A; color: #15161A; }
+.weekbar-node.rest { background: var(--surface-raised); border-color: var(--text-muted); color: var(--text-muted); }
+.weekbar-node.missed { background: #3A1E1E; border-color: #E8503A; color: #E8503A; }
+.weekbar-node.pending { background: transparent; border-color: var(--border); color: var(--text-muted); border-style: dashed; }
+.weekbar-connector {
+  position: absolute; top: 12px; left: 50%; width: 100%; height: 2px;
+  background: var(--border); z-index: 1;
+}
+.weekbar-connector.solid { background: var(--accent-pr); }
+.weekbar-day:last-child .weekbar-connector { display: none; }
+
+/* ---------- Streak: month dot calendar ---------- */
+.cal-header { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; }
+.cal-month { font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.streak-hero-inline { font-family: var(--font-mono); font-size: 13px; }
+.streak-hero-inline #streakHeroNum { color: var(--accent-pr); font-weight: 700; font-size: 16px; }
+.cal-weekday-labels {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  text-align: center; margin-bottom: 6px;
+}
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.cal-cell {
+  aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 10px; background: var(--surface); font-family: var(--font-mono); font-size: 11px;
+  gap: 3px; color: var(--text-muted); border: 1px solid var(--border);
+}
+.cal-cell.blank { visibility: hidden; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.dot-blue { background: #4FA6FF; }
+.dot-yellow { background: #FFE08A; }
+.dot-grey { background: #5A5D64; }
+.dot-red { background: #E8503A; }
+.cal-cell .dot-slot { height: 8px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.legend span { display: flex; align-items: center; gap: 5px; }
+
+/* ---------- Delete / edit affordances ---------- */
+.trash-btn { color: var(--text-muted); font-family: var(--font-mono); font-size: 14px; padding: 4px 8px; }
+.plan-row-actions { display: flex; align-items: center; gap: 10px; }
+.day-exercise-row { cursor: grab; }
+.day-exercise-row.dragging { opacity: 0.4; }
+.day-exercise-row-main { display: flex; align-items: center; gap: 10px; flex: 1; }
+.drag-handle { color: var(--text-muted); font-size: 14px; }
+.day-exercise-row-actions { display: flex; gap: 12px; align-items: center; }
+.edit-pencil { color: var(--accent-pr); font-family: var(--font-mono); font-size: 12px; }
+
+.confirm-msg { color: var(--text-muted); font-size: 14px; margin-bottom: 18px; line-height: 1.4; }
+.confirm-btn-row { display: flex; gap: 10px; }
+.confirm-btn-row .btn-ghost { flex: 1; text-align: center; }
+.btn-danger { flex: 2; background: #E8503A; }
+
+input[type=number]::-webkit-inner-spin-button { opacity: 1; }
