@@ -5,12 +5,14 @@
     plans        { id, name, isActive }
     planDays     { id, planId, weekday (0-6, 0=Sun), label }
     exercises    { id, planDayId, name, targetReps, targetSets }
-    logEntries   { id, exerciseId, date (YYYY-MM-DD), reps, sets, weight, ts }
-    streakState  { id: 1 (singleton), lastLoggedDate, currentStreak, freezeAvailable }
+    logEntries   { id, exerciseId, date (YYYY-MM-DD), reps, sets, weight, isPR, ts }
+    profileStore { id: 1 (singleton), weight, height, age, gender, activityLevel }
+    streakState  -- legacy, unused since the rolling-window engine replaced it. Left
+                    in place so opening an old DB doesn't error; nothing reads/writes it.
 */
 
 const DB_NAME = 'pr-logger';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let _dbPromise = null;
 
 function openDB() {
@@ -38,6 +40,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('streakState')) {
         db.createObjectStore('streakState', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('profileStore')) {
+        db.createObjectStore('profileStore', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);

@@ -1,5 +1,5 @@
 const WEEKDAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-const WEEKBAR_ORDER = [0,1,2,3,4,5,6]; // Sun..Sat, matches spec's S M T W T F S
+const WEEKDAY_SHORT = ['S','M','T','W','T','F','S'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function pad2(n){ return String(n).padStart(2,'0'); }
@@ -8,6 +8,9 @@ function todayStr(){ return fmtDate(new Date()); }
 function parseDate(s){ const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
 function addDays(dateStr, n){ const d = parseDate(dateStr); d.setDate(d.getDate()+n); return fmtDate(d); }
 function vibrate(pattern){ if (navigator.vibrate) navigator.vibrate(pattern); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 /* ---------- View routing ---------- */
 document.querySelectorAll('.dock-btn').forEach(btn => {
@@ -19,11 +22,11 @@ function switchView(name) {
   document.getElementById(`view-${name}`).classList.add('active');
   document.querySelector(`.dock-btn[data-view="${name}"]`).classList.add('active');
   if (name === 'today') renderToday();
-  if (name === 'plans') { resetPlanEditorState(); renderPlans(); }
-  if (name === 'streak') renderStreak();
+  if (name === 'plans') { resetPlanEditorState(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard(); }
+  if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); }
 }
 
-/* ---------- Today view ---------- */
+/* ================= TODAY ================= */
 async function getActivePlan() {
   const plans = await DB.getAll('plans');
   return plans.find(p => p.isActive) || null;
@@ -42,10 +45,8 @@ async function renderToday() {
     empty.hidden = false;
     return;
   }
-
   const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
   const day = planDays.find(pd => pd.weekday === now.getDay());
-
   if (!day) {
     document.getElementById('todaySplitName').textContent = 'Rest day';
     empty.hidden = false;
@@ -55,10 +56,7 @@ async function renderToday() {
 
   let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
   exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
-  if (exercises.length === 0) {
-    empty.hidden = false;
-    return;
-  }
+  if (exercises.length === 0) { empty.hidden = false; return; }
   empty.hidden = true;
 
   for (const ex of exercises) {
@@ -78,11 +76,7 @@ async function renderToday() {
   }
 }
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-/* ---------- Log sheet with swipe-to-adjust ---------- */
+/* ---------- Log sheet ---------- */
 let currentExercise = null;
 let adjustState = { weight: 0, reps: 0, sets: 0 };
 
@@ -95,13 +89,11 @@ function openLogSheet(ex, last) {
   updateAdjustDisplay();
   showSheet('logSheet');
 }
-
 function updateAdjustDisplay() {
   document.getElementById('weightValue').textContent = adjustState.weight;
   document.getElementById('repsValue').textContent = adjustState.reps;
   document.getElementById('setsValue').textContent = adjustState.sets;
 }
-
 function attachSwipe(trackId, field, stepPx, stepValue, min) {
   const el = document.getElementById(trackId);
   let startX = 0, startVal = 0, dragging = false;
@@ -126,10 +118,6 @@ attachSwipe('weightTrack', 'weight', 24, 2.5, 0);
 attachSwipe('repsTrack', 'reps', 20, 1, 0);
 attachSwipe('setsTrack', 'sets', 20, 1, 0);
 
-/* PR definition: weight >= exercise's all-time max weight, AND
-   reps >= best reps ever recorded at that same weight. A weight
-   never attempted before automatically satisfies the reps clause
-   (no prior data to beat). */
 async function checkIsPR(exerciseId, weight, reps) {
   const logs = await DB.getAllByIndex('logEntries', 'exerciseId', exerciseId);
   if (logs.length === 0) return true;
@@ -143,13 +131,9 @@ document.getElementById('confirmLogBtn').addEventListener('click', async () => {
   if (!currentExercise) return;
   const isPR = await checkIsPR(currentExercise.id, adjustState.weight, adjustState.reps);
   await DB.add('logEntries', {
-    exerciseId: currentExercise.id,
-    date: todayStr(),
-    reps: adjustState.reps,
-    sets: adjustState.sets,
-    weight: adjustState.weight,
-    isPR,
-    ts: Date.now()
+    exerciseId: currentExercise.id, date: todayStr(),
+    reps: adjustState.reps, sets: adjustState.sets, weight: adjustState.weight,
+    isPR, ts: Date.now()
   });
   vibrate(isPR ? [30,50,30] : [30]);
   hideSheet('logSheet');
@@ -157,22 +141,20 @@ document.getElementById('confirmLogBtn').addEventListener('click', async () => {
   updateStreakPill();
 });
 
+/* ---------- Sheets ---------- */
+const SHEET_BACKDROPS = { logSheet:'logSheetBackdrop', promptSheet:'promptBackdrop', confirmSheet:'confirmBackdrop', editExSheet:'editExBackdrop', profileSheet:'profileBackdrop' };
 function showSheet(id) {
-  const backdropId = { logSheet:'logSheetBackdrop', promptSheet:'promptBackdrop', confirmSheet:'confirmBackdrop', editExSheet:'editExBackdrop' }[id];
   document.getElementById(id).classList.add('show');
-  document.getElementById(backdropId).classList.add('show');
+  document.getElementById(SHEET_BACKDROPS[id]).classList.add('show');
 }
 function hideSheet(id) {
-  const backdropId = { logSheet:'logSheetBackdrop', promptSheet:'promptBackdrop', confirmSheet:'confirmBackdrop', editExSheet:'editExBackdrop' }[id];
   document.getElementById(id).classList.remove('show');
-  document.getElementById(backdropId).classList.remove('show');
+  document.getElementById(SHEET_BACKDROPS[id]).classList.remove('show');
 }
-document.getElementById('logSheetBackdrop').addEventListener('click', () => hideSheet('logSheet'));
-document.getElementById('promptBackdrop').addEventListener('click', () => hideSheet('promptSheet'));
-document.getElementById('confirmBackdrop').addEventListener('click', () => hideSheet('confirmSheet'));
-document.getElementById('editExBackdrop').addEventListener('click', () => hideSheet('editExSheet'));
+Object.entries(SHEET_BACKDROPS).forEach(([sheetId, backdropId]) => {
+  document.getElementById(backdropId).addEventListener('click', () => hideSheet(sheetId));
+});
 
-/* ---------- Generic confirm sheet ---------- */
 let confirmCallback = null;
 function openConfirm(title, msg, callback) {
   document.getElementById('confirmTitle').textContent = title;
@@ -186,7 +168,6 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
   if (confirmCallback) await confirmCallback();
 });
 
-/* ---------- Generic prompt sheet ---------- */
 let promptCallback = null;
 function openPrompt(title, placeholder, callback) {
   document.getElementById('promptTitle').textContent = title;
@@ -202,22 +183,145 @@ document.getElementById('promptConfirmBtn').addEventListener('click', () => {
   if (promptCallback) promptCallback(val);
 });
 
-/* ---------- Day status engine (drives weekbar + calendar + streak) ---------- */
-// Returns a map dateStr -> { status: 'attended'|'pr'|'rest'|'missed'|'none', streakAfter }
-let _dayStatusCache = null;
+/* ================= PROFILE ================= */
+async function getProfile() {
+  return await DB.get('profileStore', 1);
+}
+document.getElementById('profileBtn').addEventListener('click', async () => {
+  const p = await getProfile();
+  if (p) {
+    document.getElementById('pfWeight').value = p.weight;
+    document.getElementById('pfHeight').value = p.height;
+    document.getElementById('pfAge').value = p.age;
+    document.getElementById('pfGender').value = p.gender;
+    document.getElementById('pfActivity').value = p.activityLevel;
+  }
+  showSheet('profileSheet');
+});
+document.getElementById('setupProfileBtn').addEventListener('click', () => showSheet('profileSheet'));
+document.getElementById('profileSaveBtn').addEventListener('click', async () => {
+  const profile = {
+    id: 1,
+    weight: Number(document.getElementById('pfWeight').value),
+    height: Number(document.getElementById('pfHeight').value),
+    age: Number(document.getElementById('pfAge').value),
+    gender: document.getElementById('pfGender').value,
+    activityLevel: Number(document.getElementById('pfActivity').value)
+  };
+  if (!profile.weight || !profile.height || !profile.age) return;
+  await DB.put('profileStore', profile);
+  hideSheet('profileSheet');
+  renderNutritionCard();
+});
+
+/* ================= NUTRITION BLUEPRINT ================= */
+document.getElementById('nutritionToggle').addEventListener('click', () => {
+  const body = document.getElementById('nutritionBody');
+  const chevron = document.getElementById('nutritionChevron');
+  body.hidden = !body.hidden;
+  chevron.textContent = body.hidden ? '▾' : '▴';
+});
+
+function calcBMR(profile) {
+  const { weight, height, age, gender } = profile;
+  const male = 10*weight + 6.25*height - 5*age + 5;
+  const female = 10*weight + 6.25*height - 5*age - 161;
+  if (gender === 'male') return male;
+  if (gender === 'female') return female;
+  return (male + female) / 2; // 'other' -- averaged approximation, not a validated formula
+}
+
+const PRESET_CONFIG = {
+  aggressive: { pct: 0.20, proteinPerKg: 1.8, label: 'Aggressive Bulk' },
+  clean:      { pct: 0.10, proteinPerKg: 1.8, label: 'Clean Bulk' },
+  recomp:     { pct: 0.00, proteinPerKg: 2.0, label: 'Recomp' },
+  cut:        { pct: -0.20, proteinPerKg: 2.2, label: 'Cut' }
+};
+
+let activePreset = 'clean';
+
+function computeMacros(profile, presetKey) {
+  const bmr = calcBMR(profile);
+  const tdee = bmr * profile.activityLevel;
+  const cfg = PRESET_CONFIG[presetKey];
+  const calories = Math.round(tdee * (1 + cfg.pct));
+  const proteinG = Math.round(profile.weight * cfg.proteinPerKg);
+  const fatG = Math.round((calories * 0.25) / 9);
+  const carbsG = Math.max(0, Math.round((calories - proteinG*4 - fatG*9) / 4));
+  return { calories, proteinG, fatG, carbsG, tdee };
+}
+
+async function renderNutritionCard() {
+  const profile = await getProfile();
+  const noMsg = document.getElementById('noProfileMsg');
+  const content = document.getElementById('nutritionContent');
+  if (!profile) { noMsg.hidden = false; content.hidden = true; return; }
+  noMsg.hidden = true; content.hidden = false;
+
+  const bmi = profile.weight / Math.pow(profile.height/100, 2);
+  document.getElementById('bmiValue').textContent = bmi.toFixed(1);
+  const clamped = Math.min(40, Math.max(15, bmi));
+  const pct = ((clamped - 15) / (40 - 15)) * 100;
+  document.getElementById('bmiNeedle').style.left = `${pct}%`;
+
+  renderMacrosForPreset(profile, activePreset);
+
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.preset === activePreset);
+    btn.onclick = () => {
+      activePreset = btn.dataset.preset;
+      renderMacrosForPreset(profile, activePreset);
+    };
+  });
+
+  // Target mode sliders
+  const curSlider = document.getElementById('curWeightSlider');
+  const tgtSlider = document.getElementById('tgtWeightSlider');
+  const weeksSlider = document.getElementById('weeksSlider');
+  curSlider.value = profile.weight;
+  tgtSlider.value = profile.weight;
+  document.getElementById('curWeightLbl').textContent = profile.weight;
+  document.getElementById('tgtWeightLbl').textContent = profile.weight;
+
+  const updateTarget = () => {
+    document.getElementById('curWeightLbl').textContent = curSlider.value;
+    document.getElementById('tgtWeightLbl').textContent = tgtSlider.value;
+    document.getElementById('weeksLbl').textContent = weeksSlider.value;
+    const delta = Number(tgtSlider.value) - Number(curSlider.value);
+    const weeks = Number(weeksSlider.value);
+    const totalKcal = delta * 7700; // ~7700 kcal per kg of fat/tissue change
+    const dailyDelta = Math.round(totalKcal / (weeks * 7));
+    const bmr = calcBMR({ ...profile, weight: Number(curSlider.value) });
+    const tdee = bmr * profile.activityLevel;
+    const targetCalories = Math.round(tdee + dailyDelta);
+    const verb = dailyDelta > 0 ? 'surplus' : dailyDelta < 0 ? 'deficit' : 'maintenance';
+    document.getElementById('targetResult').textContent =
+      `${targetCalories} kcal/day (${dailyDelta >= 0 ? '+' : ''}${dailyDelta} ${verb}) over ${weeks} weeks`;
+  };
+  curSlider.oninput = updateTarget;
+  tgtSlider.oninput = updateTarget;
+  weeksSlider.oninput = updateTarget;
+  updateTarget();
+}
+
+function renderMacrosForPreset(profile, presetKey) {
+  const m = computeMacros(profile, presetKey);
+  document.getElementById('macroCal').textContent = m.calories.toLocaleString();
+  document.getElementById('macroProtein').textContent = m.proteinG + 'g';
+  document.getElementById('macroCarbs').textContent = m.carbsG + 'g';
+  document.getElementById('macroFat').textContent = m.fatG + 'g';
+}
+
+/* ================= STREAK: day-status engine ================= */
 async function computeDayStatuses(throughDateStr) {
   const logs = await DB.getAll('logEntries');
   if (logs.length === 0) return { statuses: {}, streak: 0, firstDate: null };
-
   const byDate = {};
-  logs.forEach(l => {
-    if (!byDate[l.date]) byDate[l.date] = [];
-    byDate[l.date].push(l);
-  });
+  logs.forEach(l => { (byDate[l.date] ||= []).push(l); });
   const firstDate = Object.keys(byDate).sort()[0];
 
   const statuses = {};
-  const order = []; // chronological list of computed dates, for trailing-window lookups
+  const order = [];
   let streak = 0;
   let cursor = firstDate;
   while (cursor <= throughDateStr) {
@@ -227,19 +331,13 @@ async function computeDayStatuses(throughDateStr) {
       status = dayLogs.some(l => l.isPR) ? 'pr' : 'attended';
       streak += 1;
     } else {
-      // count inactive (rest/missed) days among the previous 6 computed days
       let priorInactive = 0;
       for (let i = order.length - 1, seen = 0; i >= 0 && seen < 6; i--, seen++) {
         const s = statuses[order[i]];
         if (s === 'rest' || s === 'missed') priorInactive++;
       }
-      if (priorInactive < 2) {
-        status = 'rest';
-        // streak unchanged -- allowed rest doesn't break or grow it
-      } else {
-        status = 'missed';
-        streak = 0;
-      }
+      if (priorInactive < 2) { status = 'rest'; }
+      else { status = 'missed'; streak = 0; }
     }
     statuses[cursor] = status;
     order.push(cursor);
@@ -253,51 +351,83 @@ async function updateStreakPill() {
   document.getElementById('streakCount').textContent = data.streak;
 }
 
-/* ---------- Streak view: weekly bar + month calendar ---------- */
+/* ================= STREAK: weekly bar + month calendar ================= */
+let calViewYear, calViewMonth; // month calendar navigation state (0-indexed month)
+function resetCalendarToCurrentMonth() {
+  const now = new Date();
+  calViewYear = now.getFullYear();
+  calViewMonth = now.getMonth();
+}
+
+document.getElementById('calPrevBtn').addEventListener('click', () => {
+  calViewMonth -= 1;
+  if (calViewMonth < 0) { calViewMonth = 11; calViewYear -= 1; }
+  renderStreak();
+});
+document.getElementById('calNextBtn').addEventListener('click', () => {
+  const now = new Date();
+  if (calViewYear === now.getFullYear() && calViewMonth === now.getMonth()) return;
+  calViewMonth += 1;
+  if (calViewMonth > 11) { calViewMonth = 0; calViewYear += 1; }
+  renderStreak();
+});
+
 async function renderStreak() {
   const today = new Date();
   const todayS = todayStr();
   const data = await computeDayStatuses(todayS);
-  document.getElementById('streakHeroNum').textContent = data.streak;
+  document.getElementById('streakCount').textContent = data.streak;
 
-  // Weekly bar: current calendar week, Sun..Sat
+  // Weekly bar -- always this actual calendar week, independent of month nav
   const sunday = new Date(today);
   sunday.setDate(today.getDate() - today.getDay());
+  const satEnd = new Date(sunday); satEnd.setDate(sunday.getDate()+6);
+  document.getElementById('weekRangeLabel').textContent =
+    `${MONTH_NAMES[sunday.getMonth()].slice(0,3)} ${sunday.getDate()} – ${MONTH_NAMES[satEnd.getMonth()].slice(0,3)} ${satEnd.getDate()}`;
+
   const weekBar = document.getElementById('weekBar');
   weekBar.innerHTML = '';
   const wkLabels = ['S','M','T','W','T','F','S'];
   for (let i = 0; i < 7; i++) {
     const d = new Date(sunday); d.setDate(sunday.getDate() + i);
     const dS = fmtDate(d);
-    let status = 'pending';
-    if (dS <= todayS && data.statuses[dS] !== undefined) status = data.statuses[dS];
-    else if (dS <= todayS && dS < data.firstDate) status = 'pending';
-
+    let status;
+    if (dS === todayS) {
+      status = data.statuses[dS] || 'today-pending';
+    } else if (dS < todayS) {
+      status = (data.firstDate && dS >= data.firstDate) ? data.statuses[dS] : 'pending';
+    } else {
+      status = 'pending';
+    }
     const cell = document.createElement('div');
     cell.className = 'weekbar-day';
     const connectorSolid = (status === 'attended' || status === 'pr' || status === 'rest');
+    const glyph = (status==='attended'||status==='pr') ? '✓' : (status==='missed' ? '✕' : (status==='rest' ? '—' : ''));
     cell.innerHTML = `
       <div class="weekbar-label">${wkLabels[i]}</div>
-      <div class="weekbar-node ${status}">${status==='attended'||status==='pr' ? '✓' : (status==='rest' ? '—' : (status==='missed' ? '✕' : ''))}</div>
+      <div class="weekbar-node ${status}">${glyph}</div>
       <div class="weekbar-connector ${connectorSolid ? 'solid' : ''}"></div>
     `;
     weekBar.appendChild(cell);
   }
 
-  // Month calendar: current month, Monday-start columns, up to today only
-  document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[today.getMonth()]} ${today.getFullYear()}`;
+  // Month calendar -- respects nav state, capped forward at real current month
+  document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[calViewMonth]} ${calViewYear}`;
+  document.getElementById('calNextBtn').disabled =
+    (calViewYear === today.getFullYear() && calViewMonth === today.getMonth());
+
   const grid = document.getElementById('monthGrid');
   grid.innerHTML = '';
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const firstWeekday = (firstOfMonth.getDay() + 6) % 7; // 0=Mon
-  for (let i = 0; i < firstWeekday; i++) {
+  const firstOfMonth = new Date(calViewYear, calViewMonth, 1);
+  const firstWeekdaySun = firstOfMonth.getDay(); // 0=Sun, matches header S M T W T F S
+  for (let i = 0; i < firstWeekdaySun; i++) {
     const blank = document.createElement('div');
     blank.className = 'cal-cell blank';
     grid.appendChild(blank);
   }
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth()+1, 0).getDate();
+  const daysInMonth = new Date(calViewYear, calViewMonth+1, 0).getDate();
   for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(today.getFullYear(), today.getMonth(), day);
+    const d = new Date(calViewYear, calViewMonth, day);
     const dS = fmtDate(d);
     const cell = document.createElement('div');
     cell.className = 'cal-cell';
@@ -312,12 +442,20 @@ async function renderStreak() {
   }
 }
 
-/* ---------- Plans view ---------- */
+/* ================= PLANS ================= */
 function resetPlanEditorState() {
   currentEditingPlan = null;
   document.getElementById('planEditorHead').hidden = true;
   document.getElementById('planEditor').hidden = true;
   document.getElementById('planEditor').innerHTML = '';
+}
+
+async function renderPlanSwitcherCard() {
+  const plan = await getActivePlan();
+  const card = document.getElementById('planSwitcherCard');
+  if (!plan) { card.hidden = true; return; }
+  card.hidden = false;
+  document.getElementById('planSwitcherName').textContent = plan.name;
 }
 
 async function renderPlans() {
@@ -341,7 +479,8 @@ async function renderPlans() {
       openConfirm('Delete plan?', `"${p.name}" and all its splits and exercises will be removed. Logged history stays intact.`, async () => {
         await deletePlanCascade(p.id);
         resetPlanEditorState();
-        renderPlans();
+        await renderPlans();
+        await renderPlanSwitcherCard();
         renderToday();
       });
     });
@@ -355,7 +494,8 @@ async function activateOrEditPlan(p, plans) {
     p.isActive = true;
     await DB.put('plans', p);
     resetPlanEditorState();
-    renderPlans();
+    await renderPlans();
+    await renderPlanSwitcherCard();
     renderToday();
   } else {
     openPlanEditor(p);
@@ -378,16 +518,16 @@ document.getElementById('newPlanBtn').addEventListener('click', () => {
     const plans = await DB.getAll('plans');
     const isFirst = plans.length === 0;
     await DB.add('plans', { name, isActive: isFirst });
-    renderPlans();
+    await renderPlans();
+    await renderPlanSwitcherCard();
   });
 });
 
 let currentEditingPlan = null;
-const WEEKDAY_SHORT = ['S','M','T','W','T','F','S'];
 
 async function openPlanEditor(plan) {
   currentEditingPlan = plan;
-  document.getElementById('planEditorTitle').textContent = plan.name;
+  document.getElementById('planEditorTitle').textContent = 'Weekly Splits';
   document.getElementById('planEditorHead').hidden = false;
   const editor = document.getElementById('planEditor');
   editor.hidden = false;
@@ -428,8 +568,6 @@ async function openDayEditor(plan, weekday, existingDay) {
   renderDayExerciseEditor(day, plan);
 }
 
-let dragState = null;
-
 async function renderDayExerciseEditor(day, plan) {
   const editor = document.getElementById('planEditor');
   let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
@@ -439,15 +577,20 @@ async function renderDayExerciseEditor(day, plan) {
   box.className = 'day-exercise-editor';
 
   const headRow = document.createElement('div');
-  headRow.className = 'section-title';
-  headRow.style.marginTop = '0';
   headRow.style.display = 'flex';
   headRow.style.justifyContent = 'space-between';
-  headRow.innerHTML = `<span>${escapeHtml(day.label)} (${WEEKDAY_NAMES[day.weekday]})</span><span class="trash-btn" id="deleteDaySplitBtn">🗑</span>`;
+  headRow.style.alignItems = 'flex-start';
+  headRow.innerHTML = `
+    <div>
+      <div class="section-title" style="margin:0;">${escapeHtml(day.label)} — Workout Split</div>
+      <div class="exercise-meta" style="margin-top:2px;">${WEEKDAY_NAMES[day.weekday]}</div>
+    </div>
+    <span class="trash-btn" id="deleteDaySplitBtn">🗑</span>`;
   box.appendChild(headRow);
 
   const rowsWrap = document.createElement('div');
   rowsWrap.id = 'exRowsWrap';
+  rowsWrap.style.marginTop = '10px';
   exercises.forEach(ex => rowsWrap.appendChild(buildExerciseRow(ex, day, plan)));
   box.appendChild(rowsWrap);
 
@@ -503,14 +646,13 @@ function buildExerciseRow(ex, day, plan) {
       renderDayExerciseEditor(day, plan);
     });
   });
-  attachDragReorder(row, day, plan);
+  attachDragReorder(row);
   return row;
 }
 
-function attachDragReorder(row, day, plan) {
+function attachDragReorder(row) {
   const handle = row.querySelector('.drag-handle');
-  let startY = 0, dragging = false, placeholder = null;
-
+  let startY = 0, dragging = false;
   const onMove = (clientY) => {
     if (!dragging) return;
     row.style.transform = `translateY(${clientY - startY}px)`;
@@ -543,13 +685,9 @@ function attachDragReorder(row, day, plan) {
       await DB.put('exercises', exRecord);
     }
   };
-
-  handle.addEventListener('touchstart', e => {
-    dragging = true; startY = e.touches[0].clientY; row.classList.add('dragging');
-  }, {passive: true});
+  handle.addEventListener('touchstart', e => { dragging = true; startY = e.touches[0].clientY; row.classList.add('dragging'); }, {passive: true});
   handle.addEventListener('touchmove', e => onMove(e.touches[0].clientY), {passive: true});
   handle.addEventListener('touchend', onEnd);
-
   handle.addEventListener('mousedown', e => { dragging = true; startY = e.clientY; row.classList.add('dragging'); });
   window.addEventListener('mousemove', e => onMove(e.clientY));
   window.addEventListener('mouseup', onEnd);
@@ -570,10 +708,11 @@ function openExerciseEditSheet(ex, day, plan) {
   };
 }
 
-/* ---------- Init ---------- */
+/* ================= Init ================= */
 (async function init() {
+  resetCalendarToCurrentMonth();
   await updateStreakPill();
-  renderToday();
+  renderStreak(); // default home tab
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

@@ -15,47 +15,27 @@
 
 <header class="topbar">
   <div class="brand">PR<span class="brand-accent">X</span></div>
-  <div class="streak-pill" id="streakPill">
-    <span class="streak-flame">●</span>
-    <span id="streakCount">0</span>
-  </div>
+  <button class="profile-btn" id="profileBtn">◍</button>
 </header>
 
-<main id="view-today" class="view active">
-  <div class="today-head">
-    <div class="today-label" id="todayWeekdayLabel">Today</div>
-    <div class="today-splitname" id="todaySplitName">No split scheduled</div>
+<!-- ============ TAB 1: STREAK (home) ============ -->
+<main id="view-streak" class="view active">
+  <div class="hero-card">
+    <div class="hero-card-head">
+      <span>WEEKLY STREAK</span>
+      <span class="streak-flame-inline">🔥 <span id="streakCount">0</span></span>
+    </div>
+    <div class="hero-card-sub" id="weekRangeLabel">-</div>
+    <div class="weekbar" id="weekBar"></div>
   </div>
-  <div id="exerciseList" class="exercise-list"></div>
-  <div id="emptyToday" class="empty-state" hidden>
-    <p>Nothing set for today.</p>
-    <p class="empty-sub">Go to Plans and assign an exercise to this weekday.</p>
-  </div>
-</main>
-
-<main id="view-plans" class="view">
-  <div class="section-row">
-    <div class="section-title">Your Plans</div>
-    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
-  </div>
-  <div id="planList" class="plan-list"></div>
-
-  <div class="section-row plan-editor-head" id="planEditorHead" hidden>
-    <div class="section-title" id="planEditorTitle">Edit plan</div>
-    <button class="btn-ghost" id="closePlanEditor">Done</button>
-  </div>
-  <div id="planEditor" class="plan-editor" hidden></div>
-</main>
-
-<main id="view-streak" class="view">
-  <div class="weekbar" id="weekBar"></div>
 
   <div class="cal-header">
+    <button class="cal-nav" id="calPrevBtn">‹</button>
     <div class="cal-month" id="calMonthLabel">Month</div>
-    <div class="streak-hero-inline"><span id="streakHeroNum">0</span><span class="streak-hero-label"> day streak</span></div>
+    <button class="cal-nav" id="calNextBtn">›</button>
   </div>
   <div class="cal-weekday-labels">
-    <span>MON</span><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span>
+    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
   </div>
   <div id="monthGrid" class="cal-grid"></div>
 
@@ -67,15 +47,109 @@
   </div>
 </main>
 
+<!-- ============ TAB 2: TODAY ============ -->
+<main id="view-today" class="view">
+  <div class="today-head">
+    <div class="today-label" id="todayWeekdayLabel">Today</div>
+    <div class="today-splitname" id="todaySplitName">No split scheduled</div>
+  </div>
+  <div id="exerciseList" class="exercise-list"></div>
+  <div id="emptyToday" class="empty-state" hidden>
+    <p>Nothing set for today.</p>
+    <p class="empty-sub">Go to Plans and assign an exercise to this weekday.</p>
+  </div>
+</main>
+
+<!-- ============ TAB 3: PLANS ============ -->
+<main id="view-plans" class="view">
+
+  <!-- Nutrition Blueprint accordion -->
+  <div class="nutrition-card">
+    <div class="nutrition-head" id="nutritionToggle">
+      <span>📊 NUTRITION BLUEPRINT</span>
+      <span id="nutritionChevron">▾</span>
+    </div>
+    <div class="nutrition-body" id="nutritionBody" hidden>
+      <div id="noProfileMsg" class="empty-sub" style="text-align:left;padding:6px 0 12px;">
+        Set your stats to unlock BMI and macro targets.
+        <button class="btn-ghost" id="setupProfileBtn" style="margin-top:8px;">Set up profile</button>
+      </div>
+      <div id="nutritionContent" hidden>
+        <div class="bmi-row">
+          <span class="bmi-label">BMI <strong id="bmiValue">--</strong></span>
+        </div>
+        <div class="bmi-gauge">
+          <div class="bmi-gauge-track">
+            <div class="bmi-seg seg-under"></div>
+            <div class="bmi-seg seg-healthy"></div>
+            <div class="bmi-seg seg-over"></div>
+            <div class="bmi-seg seg-obese"></div>
+            <div class="bmi-needle" id="bmiNeedle"></div>
+          </div>
+          <div class="bmi-seg-labels"><span>Under</span><span>Healthy</span><span>Over</span><span>Obese</span></div>
+        </div>
+
+        <div class="preset-row" id="presetRow">
+          <button class="preset-btn" data-preset="aggressive">🥩 Aggressive Bulk</button>
+          <button class="preset-btn" data-preset="clean">🏋️ Clean Bulk</button>
+          <button class="preset-btn" data-preset="recomp">⚖️ Recomp</button>
+          <button class="preset-btn" data-preset="cut">✂️ Cut</button>
+        </div>
+
+        <div class="macro-grid" id="macroGrid">
+          <div class="macro-cell"><div class="macro-num" id="macroCal">--</div><div class="macro-lbl">kcal</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroProtein">--</div><div class="macro-lbl">protein</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroCarbs">--</div><div class="macro-lbl">carbs</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroFat">--</div><div class="macro-lbl">fats</div></div>
+        </div>
+
+        <div class="target-mode">
+          <div class="section-title" style="margin-bottom:8px;">Target Mode</div>
+          <div class="slider-row">
+            <label>Current weight: <span id="curWeightLbl">--</span>kg</label>
+            <input type="range" id="curWeightSlider" min="40" max="160" step="0.5">
+          </div>
+          <div class="slider-row">
+            <label>Target weight: <span id="tgtWeightLbl">--</span>kg</label>
+            <input type="range" id="tgtWeightSlider" min="40" max="160" step="0.5">
+          </div>
+          <div class="slider-row">
+            <label>Timeframe: <span id="weeksLbl">8</span> weeks</label>
+            <input type="range" id="weeksSlider" min="2" max="32" step="1" value="8">
+          </div>
+          <div class="target-result" id="targetResult">--</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="plan-switcher-card" id="planSwitcherCard" hidden>
+    <div class="plan-switcher-label">Active Plan</div>
+    <div class="plan-switcher-name" id="planSwitcherName">--</div>
+  </div>
+
+  <div class="section-row">
+    <div class="section-title">Your Plans</div>
+    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
+  </div>
+  <div id="planList" class="plan-list"></div>
+
+  <div class="section-row plan-editor-head" id="planEditorHead" hidden>
+    <div class="section-title" id="planEditorTitle">Weekly Splits</div>
+    <button class="btn-ghost" id="closePlanEditor">Done</button>
+  </div>
+  <div id="planEditor" class="plan-editor" hidden></div>
+</main>
+
 <nav class="dock">
-  <button class="dock-btn active" data-view="today">
+  <button class="dock-btn active" data-view="streak">
+    <span class="dock-icon">●</span><span>Streak</span>
+  </button>
+  <button class="dock-btn" data-view="today">
     <span class="dock-icon">◆</span><span>Today</span>
   </button>
   <button class="dock-btn" data-view="plans">
     <span class="dock-icon">▤</span><span>Plans</span>
-  </button>
-  <button class="dock-btn" data-view="streak">
-    <span class="dock-icon">●</span><span>Streak</span>
   </button>
 </nav>
 
@@ -84,7 +158,6 @@
 <div id="logSheet" class="sheet">
   <div class="sheet-handle"></div>
   <div class="sheet-title" id="logSheetTitle">Exercise</div>
-
   <div class="adjust-row">
     <div class="adjust-block">
       <div class="adjust-label">Weight (kg)</div>
@@ -94,7 +167,6 @@
       </div>
     </div>
   </div>
-
   <div class="adjust-row two-up">
     <div class="adjust-block">
       <div class="adjust-label">Reps</div>
@@ -109,7 +181,6 @@
       </div>
     </div>
   </div>
-
   <button class="btn-log" id="confirmLogBtn">Log it</button>
 </div>
 
@@ -123,7 +194,7 @@
   <button class="btn-log" id="promptConfirmBtn">Save</button>
 </div>
 
-<!-- Confirm / destructive action sheet -->
+<!-- Confirm sheet -->
 <div id="confirmBackdrop" class="sheet-backdrop"></div>
 <div id="confirmSheet" class="sheet small-sheet">
   <div class="sheet-handle"></div>
@@ -152,6 +223,48 @@
     </div>
   </div>
   <button class="btn-log" id="editExSaveBtn">Save</button>
+</div>
+
+<!-- Profile sheet -->
+<div id="profileBackdrop" class="sheet-backdrop"></div>
+<div id="profileSheet" class="sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title">Your Profile</div>
+  <div class="adjust-row two-up">
+    <div class="adjust-block">
+      <div class="adjust-label">Weight (kg)</div>
+      <input id="pfWeight" class="text-input" type="number" inputmode="decimal">
+    </div>
+    <div class="adjust-block">
+      <div class="adjust-label">Height (cm)</div>
+      <input id="pfHeight" class="text-input" type="number" inputmode="numeric">
+    </div>
+  </div>
+  <div class="adjust-row two-up">
+    <div class="adjust-block">
+      <div class="adjust-label">Age</div>
+      <input id="pfAge" class="text-input" type="number" inputmode="numeric">
+    </div>
+    <div class="adjust-block">
+      <div class="adjust-label">Gender</div>
+      <select id="pfGender" class="text-input">
+        <option value="male">Male</option>
+        <option value="female">Female</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+  </div>
+  <div class="adjust-block" style="margin-bottom:14px;">
+    <div class="adjust-label">Activity level</div>
+    <select id="pfActivity" class="text-input">
+      <option value="1.2">Sedentary (little/no exercise)</option>
+      <option value="1.375">Light (1-3 days/week)</option>
+      <option value="1.55" selected>Moderate (3-5 days/week)</option>
+      <option value="1.725">Active (6-7 days/week)</option>
+      <option value="1.9">Very active (physical job + training)</option>
+    </select>
+  </div>
+  <button class="btn-log" id="profileSaveBtn">Save profile</button>
 </div>
 
 <script src="js/db.js"></script>
