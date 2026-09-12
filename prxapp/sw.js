@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prx-v2';
+const CACHE_NAME = 'prx-v3';
 const ASSETS = [
   './',
   './index.html',
