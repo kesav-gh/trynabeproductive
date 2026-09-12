@@ -278,7 +278,7 @@ html, body {
 .cal-nav:disabled { opacity: 0.25; }
 
 /* Streak: month dot calendar */
-.cal-header { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; }
+.cal-header { display: flex; justify-content: space-between; align-items: baseline; margin-top: 36px !important; }
 .cal-month { font-family: var(--font-heading); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
 .streak-hero-inline { font-family: var(--font-mono); font-size: 13px; }
 .streak-hero-inline #streakHeroNum { color: var(--accent-pr); font-weight: 700; font-size: 16px; }
@@ -287,7 +287,7 @@ html, body {
   font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
   text-align: center; margin-bottom: 6px;
 }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; min-height: 280px; margin-bottom: auto; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px !important; min-height: 280px; margin-bottom: auto; }
 .cal-cell {
   min-height: 46px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   border-radius: 10px; background: var(--surface); font-family: var(--font-mono); font-size: 11px;
