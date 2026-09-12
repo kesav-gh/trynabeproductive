@@ -56,7 +56,20 @@
 <!-- ============ TAB 3: PLANS ============ -->
 <main id="view-plans" class="view">
 
-  <!-- Nutrition Blueprint accordion -->
+  <!-- 1. ACTIVE PLAN SWITCHER CARD -->
+  <div class="plan-switcher-card" id="planSwitcherCard" hidden>
+    <div class="plan-switcher-label">Active Plan</div>
+    <div class="plan-switcher-name" id="planSwitcherName">--</div>
+  </div>
+
+  <!-- 2. YOUR PLANS FIRST -->
+  <div class="section-row">
+    <div class="section-title">Your Plans</div>
+    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
+  </div>
+  <div id="planList" class="plan-list"></div>
+
+  <!-- 3. MACROCALC SECOND -->
   <div class="nutrition-card">
     <div class="nutrition-head" id="nutritionToggle">
       <span>📊 MacroCalc</span>
@@ -67,10 +80,8 @@
         Set your stats to unlock BMI and macro targets.
         <button class="btn-ghost" id="setupProfileBtn" style="margin-top:8px;">Set up profile</button>
       </div>
-      <div id="nutritionContent" hidden>
-        <div class="bmi-row">
-          <span class="bmi-label">BMI <strong id="bmiValue">--</strong></span>
-        </div>
+      <div id="nutritionContent">
+        <div class="bmi-row">BMI <strong id="bmiValue">--</strong></div>
         <div class="bmi-gauge">
           <div class="bmi-gauge-track">
             <div class="bmi-seg seg-under"></div>
@@ -79,17 +90,19 @@
             <div class="bmi-seg seg-obese"></div>
             <div class="bmi-needle" id="bmiNeedle"></div>
           </div>
-          <div class="bmi-seg-labels"><span>Under</span><span>Healthy</span><span>Over</span><span>Obese</span></div>
+          <div class="bmi-seg-labels">
+            <span>Underweight</span><span>Normal</span><span>Overweight</span><span>Obese</span>
+          </div>
         </div>
 
-        <div class="preset-row" id="presetRow">
+        <div class="preset-row">
           <button class="preset-btn" data-preset="aggressive">🥩 Aggressive Bulk</button>
-          <button class="preset-btn" data-preset="clean">🏋️ Clean Bulk</button>
+          <button class="preset-btn active" data-preset="clean">🏋️ Clean Bulk</button>
           <button class="preset-btn" data-preset="recomp">⚖️ Recomp</button>
           <button class="preset-btn" data-preset="cut">✂️ Cut</button>
         </div>
 
-        <div class="macro-grid" id="macroGrid">
+        <div class="macro-grid">
           <div class="macro-cell"><div class="macro-num" id="macroCal">--</div><div class="macro-lbl">kcal</div></div>
           <div class="macro-cell"><div class="macro-num" id="macroProtein">--</div><div class="macro-lbl">protein</div></div>
           <div class="macro-cell"><div class="macro-num" id="macroCarbs">--</div><div class="macro-lbl">carbs</div></div>
@@ -97,10 +110,9 @@
         </div>
 
         <div class="target-mode">
-          <div class="section-title" style="margin-bottom:8px;">Target Mode</div>
           <div class="current-weight-badge">
-            <span class="cwb-label">CURRENT WEIGHT</span>
-            <span class="cwb-value" id="curWeightDisplay">-- KG</span>
+            <div class="cwb-label">CURRENT WEIGHT</div>
+            <div class="cwb-value" id="curWeightDisplay">-- KG</div>
           </div>
           <div class="slider-row">
             <label>Target weight: <span id="tgtWeightLbl">--</span>kg</label>
@@ -108,24 +120,14 @@
           </div>
           <div class="slider-row">
             <label>Timeframe: <span id="weeksLbl">8</span> weeks</label>
-            <input type="range" id="weeksSlider" min="2" max="32" step="1" value="8">
+            <input type="range" id="weeksSlider" min="2" max="52" step="1" value="8">
           </div>
-          <div class="target-result" id="targetResult">--</div>
+          <div id="targetResult" class="target-result">--</div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="plan-switcher-card" id="planSwitcherCard" hidden>
-    <div class="plan-switcher-label">Active Plan</div>
-    <div class="plan-switcher-name" id="planSwitcherName">--</div>
-  </div>
-
-  <div class="section-row">
-    <div class="section-title">Your Plans</div>
-    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
-  </div>
-  <div id="planList" class="plan-list"></div>
 </main>
 
 <nav class="dock">

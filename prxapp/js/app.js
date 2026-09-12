@@ -22,7 +22,7 @@ function switchView(name) {
   document.getElementById(`view-${name}`).classList.add('active');
   document.querySelector(`.dock-btn[data-view="${name}"]`).classList.add('active');
   if (name === 'today') renderToday();
-  if (name === 'plans') { collapseAllPlans(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard(); }
+  if (name === 'plans') { collapseAllPlans(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard().catch(()=>{}); }
   if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); renderGreeting(); }
 }
 
@@ -220,13 +220,15 @@ document.getElementById('profileSaveBtn').addEventListener('click', async () => 
 
 /* ================= GREETING ================= */
 function renderGreeting(profile) {
+  const banner = document.getElementById('greetingBanner');
+  if (!banner) return;
   if (profile && profile.name) {
-    document.getElementById('greetingBanner').textContent = `Welcome back, ${profile.name} 👋`;
+    banner.textContent = `Welcome back, ${profile.name} 👋`;
     return;
   }
   getProfile().then(p => {
     const name = (p && p.name) ? p.name : 'Athlete';
-    document.getElementById('greetingBanner').textContent = `Welcome back, ${name} 👋`;
+    banner.textContent = `Welcome back, ${name} 👋`;
   });
 }
 
@@ -269,10 +271,14 @@ function computeMacros(profile, presetKey) {
 
 function renderMacrosForPreset(profile, presetKey) {
   const m = computeMacros(profile, presetKey);
-  document.getElementById('macroCal').textContent = m.calories.toLocaleString();
-  document.getElementById('macroProtein').textContent = m.proteinG + 'g';
-  document.getElementById('macroCarbs').textContent = m.carbsG + 'g';
-  document.getElementById('macroFat').textContent = m.fatG + 'g';
+  const cal = document.getElementById('macroCal');
+  const pro = document.getElementById('macroProtein');
+  const carb = document.getElementById('macroCarbs');
+  const fat = document.getElementById('macroFat');
+  if (cal) cal.textContent = m.calories.toLocaleString();
+  if (pro) pro.textContent = m.proteinG + 'g';
+  if (carb) carb.textContent = m.carbsG + 'g';
+  if (fat) fat.textContent = m.fatG + 'g';
 }
 
 /* Preset button handlers — attached once, not on every render */
@@ -291,34 +297,45 @@ async function renderNutritionCard() {
   const profile = await getProfile();
   const noMsg = document.getElementById('noProfileMsg');
   const content = document.getElementById('nutritionContent');
+  if (!noMsg || !content) return;
   if (!profile) { noMsg.hidden = false; content.hidden = true; return; }
   noMsg.hidden = true; content.hidden = false;
 
-  const bmi = profile.weight / Math.pow(profile.height/100, 2);
-  document.getElementById('bmiValue').textContent = bmi.toFixed(1);
-  const clamped = Math.min(40, Math.max(15, bmi));
-  const pct = ((clamped - 15) / (40 - 15)) * 100;
-  document.getElementById('bmiNeedle').style.left = `${pct}%`;
+  const bmiValueEl = document.getElementById('bmiValue');
+  const bmiNeedleEl = document.getElementById('bmiNeedle');
+  const curWeightEl = document.getElementById('curWeightDisplay');
+  const tgtSlider = document.getElementById('tgtWeightSlider');
+  const weeksSlider = document.getElementById('weeksSlider');
+  const tgtLbl = document.getElementById('tgtWeightLbl');
+  const weeksLbl = document.getElementById('weeksLbl');
+  const targetResultEl = document.getElementById('targetResult');
+
+  if (bmiValueEl) {
+    const bmi = profile.weight / Math.pow(profile.height/100, 2);
+    bmiValueEl.textContent = bmi.toFixed(1);
+    if (bmiNeedleEl) {
+      const clamped = Math.min(40, Math.max(15, bmi));
+      const pct = ((clamped - 15) / (40 - 15)) * 100;
+      bmiNeedleEl.style.left = `${pct}%`;
+    }
+  }
 
   renderMacrosForPreset(profile, activePreset);
 
-  /* Sync active state on preset buttons */
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.preset === activePreset);
   });
 
-  /* Current weight — read-only badge */
-  document.getElementById('curWeightDisplay').textContent = profile.weight + ' KG';
+  if (curWeightEl) curWeightEl.textContent = profile.weight + ' KG';
 
-  /* Target mode sliders */
-  const tgtSlider = document.getElementById('tgtWeightSlider');
-  const weeksSlider = document.getElementById('weeksSlider');
+  if (!tgtSlider || !weeksSlider || !tgtLbl || !weeksSlider || !targetResultEl) return;
+
   tgtSlider.value = profile.weight;
-  document.getElementById('tgtWeightLbl').textContent = profile.weight;
+  tgtLbl.textContent = profile.weight;
 
   const updateTarget = () => {
-    document.getElementById('tgtWeightLbl').textContent = tgtSlider.value;
-    document.getElementById('weeksLbl').textContent = weeksSlider.value;
+    tgtLbl.textContent = tgtSlider.value;
+    weeksLbl.textContent = weeksSlider.value;
     const delta = Number(tgtSlider.value) - profile.weight;
     const weeks = Number(weeksSlider.value);
     const totalKcal = delta * 7700;
@@ -327,7 +344,7 @@ async function renderNutritionCard() {
     const tdee = bmr * profile.activityLevel;
     const targetCalories = Math.round(tdee + dailyDelta);
     const verb = dailyDelta > 0 ? 'surplus' : dailyDelta < 0 ? 'deficit' : 'maintenance';
-    document.getElementById('targetResult').textContent =
+    targetResultEl.textContent =
       `${targetCalories} kcal/day (${dailyDelta >= 0 ? '+' : ''}${dailyDelta} ${verb}) over ${weeks} weeks`;
   };
   tgtSlider.oninput = updateTarget;
