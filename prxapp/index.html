@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#15161A">
+<meta name="theme-color" content="#131314">
 <title>PRX-Personal Record Indexer</title>
 <link rel="manifest" href="manifest.json?v=2">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Plus+Jakarta+Sans:wght@600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -48,28 +48,32 @@
   <div class="today-status-bar" id="todayStatusBar">TODAY</div>
   <div id="exerciseList" class="exercise-list"></div>
   <div id="emptyToday" class="empty-state" hidden>
+    <svg class="empty-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="28" width="8" height="8" rx="2" stroke="#8B8E94" stroke-width="2"/>
+      <rect x="52" y="28" width="8" height="8" rx="2" stroke="#8B8E94" stroke-width="2"/>
+      <rect x="12" y="30" width="4" height="4" fill="#8B8E94"/>
+      <rect x="48" y="30" width="4" height="4" fill="#8B8E94"/>
+      <line x1="16" y1="32" x2="48" y2="32" stroke="#8B8E94" stroke-width="3"/>
+    </svg>
     <p>Nothing set for today.</p>
-    <p class="empty-sub">Go to Plans and assign an exercise to this weekday.</p>
+    <button class="empty-cta" onclick="switchView('plans')">+ Assign Exercise</button>
   </div>
 </main>
 
 <!-- ============ TAB 3: PLANS ============ -->
 <main id="view-plans" class="view">
 
-  <!-- 1. ACTIVE PLAN SWITCHER CARD -->
   <div class="plan-switcher-card" id="planSwitcherCard" hidden>
     <div class="plan-switcher-label">Active Plan</div>
     <div class="plan-switcher-name" id="planSwitcherName">--</div>
   </div>
 
-  <!-- 2. YOUR PLANS FIRST -->
   <div class="section-row">
     <div class="section-title">Your Plans</div>
     <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
   </div>
   <div id="planList" class="plan-list"></div>
 
-  <!-- 3. MACROCALC SECOND -->
   <div class="nutrition-card">
     <div class="nutrition-head" id="nutritionToggle">
       <span>📊 MacroCalc</span>

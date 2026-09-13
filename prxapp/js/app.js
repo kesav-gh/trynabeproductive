@@ -223,12 +223,12 @@ function renderGreeting(profile) {
   const banner = document.getElementById('greetingBanner');
   if (!banner) return;
   if (profile && profile.name) {
-    banner.textContent = `Welcome back, ${profile.name} 👋`;
+    banner.innerHTML = `Welcome back, <span class="greeting-name">${escapeHtml(profile.name)}</span> 👋`;
     return;
   }
   getProfile().then(p => {
     const name = (p && p.name) ? p.name : 'Athlete';
-    banner.textContent = `Welcome back, ${name} 👋`;
+    banner.innerHTML = `Welcome back, <span class="greeting-name">${escapeHtml(name)}</span> 👋`;
   });
 }
 
@@ -468,7 +468,7 @@ async function renderStreak() {
     const d = new Date(calViewYear, calViewMonth, day);
     const dS = fmtDate(d);
     const cell = document.createElement('div');
-    cell.className = 'cal-cell';
+    cell.className = 'cal-cell' + (dS === todayS ? ' is-today' : '');
     let dotHtml = '<div class="dot-slot"></div>';
     if (dS <= todayS && data.firstDate && dS >= data.firstDate) {
       const status = data.statuses[dS];
