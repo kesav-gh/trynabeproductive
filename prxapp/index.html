@@ -9,7 +9,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Lora:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -31,15 +31,23 @@
     <div class="weekbar" id="weekBar"></div>
   </div>
 
-  <div class="cal-header">
-    <button class="cal-nav" id="calPrevBtn">‹</button>
-    <div class="cal-month" id="calMonthLabel">Month</div>
-    <button class="cal-nav" id="calNextBtn">›</button>
+  <div class="calendar-card">
+    <div class="cal-header">
+      <button class="cal-nav" id="calPrevBtn">‹</button>
+      <div class="cal-month" id="calMonthLabel">Month</div>
+      <button class="cal-nav" id="calNextBtn">›</button>
+    </div>
+    <div class="cal-weekday-labels">
+      <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+    </div>
+    <div id="monthGrid" class="cal-grid"></div>
+    <div class="legend">
+      <span><i class="dot dot-blue"></i>Attended</span>
+      <span><i class="dot dot-yellow"></i>PR</span>
+      <span><i class="dot dot-grey"></i>Rest</span>
+      <span><i class="dot dot-red"></i>Missed</span>
+    </div>
   </div>
-  <div class="cal-weekday-labels">
-    <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
-  </div>
-  <div id="monthGrid" class="cal-grid"></div>
 
 </main>
 
@@ -136,7 +144,7 @@
 
 <nav class="dock">
   <button class="dock-btn active" data-view="streak">
-    <span class="dock-icon">●</span><span>Streak</span>
+    <span class="dock-icon">🔥</span><span>Streak</span>
   </button>
   <button class="dock-btn" data-view="today">
     <span class="dock-icon">◆</span><span>Today</span>
