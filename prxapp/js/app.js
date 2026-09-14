@@ -70,7 +70,7 @@ async function renderToday() {
         <div class="exercise-name">${escapeHtml(ex.name)}</div>
         <div class="exercise-meta">target ${ex.targetSets}×${ex.targetReps}</div>
       </div>
-      <div class="exercise-lastlog">${last ? last.weight + 'kg' : '--'}</div>
+      <div class="exercise-lastlog${last ? '' : ' muted'}">${last ? last.weight + 'kg' : '--'}</div>
     `;
     card.addEventListener('click', () => openLogSheet(ex, last));
     list.appendChild(card);
@@ -202,6 +202,7 @@ document.getElementById('profileBtn').addEventListener('click', async () => {
 });
 document.getElementById('setupProfileBtn').addEventListener('click', () => showSheet('profileSheet'));
 document.getElementById('profileSaveBtn').addEventListener('click', async () => {
+  const existing = await getProfile();
   const profile = {
     id: 1,
     name: document.getElementById('pfName').value.trim() || '',
@@ -209,7 +210,9 @@ document.getElementById('profileSaveBtn').addEventListener('click', async () => 
     height: Number(document.getElementById('pfHeight').value),
     age: Number(document.getElementById('pfAge').value),
     gender: document.getElementById('pfGender').value,
-    activityLevel: Number(document.getElementById('pfActivity').value)
+    activityLevel: Number(document.getElementById('pfActivity').value),
+    streakRecharges: existing?.streakRecharges ?? 3,
+    rechargeUsedThisWeek: existing?.rechargeUsedThisWeek ?? false
   };
   if (!profile.weight || !profile.height || !profile.age) return;
   await DB.put('profileStore', profile);
@@ -301,6 +304,16 @@ async function renderNutritionCard() {
   if (!profile) { noMsg.hidden = false; content.hidden = true; return; }
   noMsg.hidden = true; content.hidden = false;
 
+  const bmi = profile.weight / Math.pow(profile.height/100, 2);
+  const m = computeMacros(profile, activePreset);
+  const nutritionHead = document.getElementById('nutritionToggle');
+  if (nutritionHead) {
+    const summarySpan = nutritionHead.querySelector('.nutrition-summary');
+    if (summarySpan) {
+      summarySpan.textContent = `BMI ${bmi.toFixed(1)} · ${m.calories.toLocaleString()} kcal`;
+    }
+  }
+
   const bmiValueEl = document.getElementById('bmiValue');
   const bmiNeedleEl = document.getElementById('bmiNeedle');
   const curWeightEl = document.getElementById('curWeightDisplay');
@@ -311,7 +324,6 @@ async function renderNutritionCard() {
   const targetResultEl = document.getElementById('targetResult');
 
   if (bmiValueEl) {
-    const bmi = profile.weight / Math.pow(profile.height/100, 2);
     bmiValueEl.textContent = bmi.toFixed(1);
     if (bmiNeedleEl) {
       const clamped = Math.min(40, Math.max(15, bmi));
@@ -353,41 +365,103 @@ async function renderNutritionCard() {
 }
 
 /* ================= STREAK: day-status engine ================= */
-async function computeDayStatuses(throughDateStr) {
+function getMondayStr(dateStr) {
+  const d = parseDate(dateStr);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return fmtDate(d);
+}
+
+function getWeekMondayStr() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + diff);
+  return fmtDate(mon);
+}
+
+async function checkAndRestockRecharges(profile) {
+  if (!profile) return;
+  const todayS = todayStr();
+  const thisMonday = getWeekMondayStr();
+  const lastMonday = addDays(thisMonday, -7);
+  const lastSunday = addDays(thisMonday, -1);
+
   const logs = await DB.getAll('logEntries');
-  if (logs.length === 0) return { statuses: {}, streak: 0, firstDate: null };
+  const lastWeekLogs = logs.filter(l => l.date >= lastMonday && l.date <= lastSunday);
+  const uniqueDays = new Set(lastWeekLogs.map(l => l.date));
+  const daysAttended = uniqueDays.size;
+
+  const today = new Date();
+  const isMonday = today.getDay() === 1;
+  const alreadyResetThisWeek = profile.rechargeUsedThisWeek === false && profile.streakRecharges === 3;
+
+  if (isMonday || !alreadyResetThisWeek) {
+    profile.rechargeUsedThisWeek = false;
+    if (daysAttended >= 5) {
+      profile.streakRecharges = 3;
+    }
+    await DB.put('profileStore', profile);
+  }
+}
+
+async function computeDayStatuses(throughDateStr, profile) {
+  const logs = await DB.getAll('logEntries');
+  const recharges = profile?.streakRecharges ?? 3;
+  let rechargedThisWeek = profile?.rechargeUsedThisWeek ?? false;
+
+  if (logs.length === 0) return { statuses: {}, streak: 0, firstDate: null, rechargesRemaining: recharges };
   const byDate = {};
   logs.forEach(l => { (byDate[l.date] ||= []).push(l); });
   const firstDate = Object.keys(byDate).sort()[0];
+
+  const thisMonday = getWeekMondayStr();
 
   const statuses = {};
   const order = [];
   let streak = 0;
   let cursor = firstDate;
+  let rechargesUsed = 0;
   while (cursor <= throughDateStr) {
     const dayLogs = byDate[cursor];
+    const isToday = (cursor === throughDateStr);
     let status;
     if (dayLogs && dayLogs.length > 0) {
       status = dayLogs.some(l => l.isPR) ? 'pr' : 'attended';
       streak += 1;
+    } else if (isToday) {
+      status = 'pending';
     } else {
       let priorInactive = 0;
       for (let i = order.length - 1, seen = 0; i >= 0 && seen < 6; i--, seen++) {
         const s = statuses[order[i]];
-        if (s === 'rest' || s === 'missed') priorInactive++;
+        if (s === 'rest' || s === 'missed' || s === 'recharged') priorInactive++;
       }
-      if (priorInactive < 2) { status = 'rest'; }
-      else { status = 'missed'; streak = 0; }
+      const canRecharge = !rechargedThisWeek && (recharges - rechargesUsed) > 0;
+      if (priorInactive < 2) {
+        status = 'rest';
+      } else if (canRecharge && cursor >= thisMonday) {
+        status = 'recharged';
+        rechargedThisWeek = true;
+        rechargesUsed++;
+        streak += 1;
+      } else {
+        status = 'missed';
+        streak = 0;
+      }
     }
     statuses[cursor] = status;
     order.push(cursor);
     cursor = addDays(cursor, 1);
   }
-  return { statuses, streak, firstDate };
+  return { statuses, streak, firstDate, rechargesRemaining: recharges - rechargesUsed, rechargeUsedThisWeek: rechargedThisWeek };
 }
 
 async function updateStreakPill() {
-  const data = await computeDayStatuses(todayStr());
+  const profile = await getProfile();
+  const data = await computeDayStatuses(todayStr(), profile);
   document.getElementById('streakCount').textContent = data.streak;
 }
 
@@ -415,7 +489,10 @@ document.getElementById('calNextBtn').addEventListener('click', () => {
 async function renderStreak() {
   const today = new Date();
   const todayS = todayStr();
-  const data = await computeDayStatuses(todayS);
+  const profile = await getProfile();
+  await checkAndRestockRecharges(profile);
+  const freshProfile = await getProfile();
+  const data = await computeDayStatuses(todayS, freshProfile);
   document.getElementById('streakCount').textContent = data.streak;
 
   const sunday = new Date(today);
@@ -424,9 +501,23 @@ async function renderStreak() {
   document.getElementById('weekRangeLabel').textContent =
     `${MONTH_NAMES[sunday.getMonth()].slice(0,3)} ${sunday.getDate()} – ${MONTH_NAMES[satEnd.getMonth()].slice(0,3)} ${satEnd.getDate()}`;
 
+  /* Weekday labels */
+  const weekLabels = document.getElementById('weekLabels');
+  weekLabels.innerHTML = '';
+  const wkLabels = ['S','M','T','W','T','F','S'];
+  for (let i = 0; i < 7; i++) {
+    const span = document.createElement('span');
+    span.textContent = wkLabels[i];
+    weekLabels.appendChild(span);
+  }
+
+  /* Day nodes + pill background */
   const weekBar = document.getElementById('weekBar');
   weekBar.innerHTML = '';
-  const wkLabels = ['S','M','T','W','T','F','S'];
+  const pillBg = document.getElementById('pillBg');
+  let streakStartIdx = -1;
+  let streakEndIdx = -1;
+  const statuses = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(sunday); d.setDate(sunday.getDate() + i);
     const dS = fmtDate(d);
@@ -436,20 +527,54 @@ async function renderStreak() {
     } else if (dS < todayS) {
       status = (data.firstDate && dS >= data.firstDate) ? data.statuses[dS] : 'pending';
     } else {
-      status = 'pending';
+      status = 'future';
     }
-    const cell = document.createElement('div');
-    cell.className = 'weekbar-day';
-    const connectorSolid = (status === 'attended' || status === 'pr' || status === 'rest');
-    const glyph = (status==='attended'||status==='pr') ? '✓' : (status==='missed' ? '✕' : (status==='rest' ? '—' : ''));
-    cell.innerHTML = `
-      <div class="weekbar-label">${wkLabels[i]}</div>
-      <div class="weekbar-node ${status}">${glyph}</div>
-      <div class="weekbar-connector ${connectorSolid ? 'solid' : ''}"></div>
-    `;
-    weekBar.appendChild(cell);
+    statuses.push(status);
+
+    const isActive = (status === 'attended' || status === 'pr' || status === 'recharged');
+    if (isActive) {
+      if (streakStartIdx === -1) streakStartIdx = i;
+      streakEndIdx = i;
+    }
+
+    const glyph = (status==='attended') ? '✓' : (status==='pr') ? '★' : (status==='recharged') ? '⚡' : (status==='missed') ? '✕' : (status==='rest') ? '—' : '';
+    const node = document.createElement('div');
+    node.className = `streak-node ${status}`;
+    node.textContent = glyph;
+    weekBar.appendChild(node);
   }
 
+  /* Position thick pill background behind consecutive active days */
+  if (streakStartIdx >= 0 && streakEndIdx >= streakStartIdx) {
+    const nodeW = 30;
+    const trackW = weekBar.offsetWidth || 280;
+    const gap = trackW > 0 ? (trackW - 7 * nodeW) / 6 : 0;
+    const leftPx = streakStartIdx * (nodeW + gap);
+    const rightPx = (6 - streakEndIdx) * (nodeW + gap);
+    pillBg.style.left = `calc(${leftPx}px - 4px)`;
+    pillBg.style.right = `calc(${rightPx}px - 4px)`;
+    pillBg.style.width = 'auto';
+  } else {
+    pillBg.style.left = '50%';
+    pillBg.style.right = '50%';
+    pillBg.style.width = '0';
+  }
+
+  /* Recharge icons in bottom row */
+  const rechargeRow = document.getElementById('rechargeRow');
+  rechargeRow.innerHTML = '';
+  const total = 3;
+  const remaining = data.rechargesRemaining ?? 3;
+  const boltSvg = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>`;
+  for (let i = 0; i < total; i++) {
+    const icon = document.createElement('div');
+    const used = i >= remaining;
+    icon.className = `recharge-icon ${used ? 'used' : 'available'}`;
+    icon.innerHTML = boltSvg;
+    rechargeRow.appendChild(icon);
+  }
+
+  /* Month calendar */
   document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[calViewMonth]} ${calViewYear}`;
   document.getElementById('calNextBtn').disabled =
     (calViewYear === today.getFullYear() && calViewMonth === today.getMonth());
@@ -472,7 +597,7 @@ async function renderStreak() {
     let dotHtml = '<div class="dot-slot"></div>';
     if (dS <= todayS && data.firstDate && dS >= data.firstDate) {
       const status = data.statuses[dS];
-      const dotClass = { attended:'dot-blue', pr:'dot-yellow', rest:'dot-grey', missed:'dot-red' }[status];
+      const dotClass = { attended:'dot-blue', pr:'dot-yellow', rest:'dot-grey', missed:'dot-red', recharged:'dot-green' }[status];
       if (dotClass) dotHtml = `<span class="dot ${dotClass}"></span>`;
     }
     cell.innerHTML = `<span>${day}</span>${dotHtml}`;

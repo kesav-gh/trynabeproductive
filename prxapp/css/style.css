@@ -60,7 +60,7 @@ html, body {
   font-family: var(--font-heading);
   font-size: 20px;
   font-weight: 500;
-  color: var(--text);
+  color: #FFFFFF;
   padding: 4px 0 16px;
 }
 
@@ -71,7 +71,7 @@ html, body {
   font-size: 22px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text);
+  color: #FFFFFF;
   padding: 12px 0 20px;
 }
 
@@ -85,9 +85,10 @@ html, body {
   transition: transform 0.15s ease;
 }
 .exercise-card:active { transform: scale(0.98); }
-.exercise-name { font-weight: 700; font-size: 16px; font-family: var(--font-heading); }
+.exercise-name { font-weight: 700; font-size: 16px; font-family: var(--font-heading); color: #FFFFFF; }
 .exercise-meta { color: var(--text-muted); font-family: var(--font-mono); font-size: 13px; margin-top: 4px; }
 .exercise-lastlog { font-family: var(--font-mono); font-size: 13px; color: var(--accent-pr); text-align: right; }
+.exercise-lastlog.muted { color: var(--dv-grey); }
 
 .empty-state {
   text-align: center; padding: 60px 20px; color: var(--text-muted);
@@ -110,7 +111,7 @@ html, body {
 
 /* Plans */
 .section-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; }
-.section-title { font-family: var(--font-heading); font-weight: 700; font-size: 16px; }
+.section-title { font-family: var(--font-heading); font-weight: 700; font-size: 16px; color: #FFFFFF; }
 .btn-ghost {
   background: none; border: 1px solid var(--border); color: var(--accent-pr);
   font-family: var(--font-mono); font-size: 13px; padding: 6px 12px;
@@ -127,7 +128,7 @@ html, body {
   display: flex; justify-content: space-between; align-items: center;
 }
 .plan-card.is-active .plan-card-head { border-bottom: 1px solid var(--border); }
-.plan-card-name { font-weight: 700; font-family: var(--font-heading); }
+.plan-card-name { font-weight: 700; font-family: var(--font-heading); text-transform: capitalize; }
 .plan-card-badge {
   font-family: var(--font-mono); font-size: 11px; color: var(--accent-pr);
   border: 1px solid var(--accent-pr); border-radius: 10px; padding: 2px 8px;
@@ -192,12 +193,12 @@ html, body {
   position: relative; z-index: 1;
   transition: color 0.2s ease;
 }
-.dock-btn.active { color: var(--text); }
+.dock-btn.active { color: var(--accent-pr); }
 .dock-btn.active::before {
   content: '';
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 201, 74, 0.12);
   border-radius: 24px;
   z-index: -1;
   transition: background 0.2s ease;
@@ -229,7 +230,7 @@ html, body {
   width: 36px; height: 4px; background: var(--border);
   border-radius: 2px; margin: 6px auto 14px;
 }
-.sheet-title { font-weight: 700; font-size: 18px; margin-bottom: 16px; font-family: var(--font-heading); }
+.sheet-title { font-weight: 700; font-size: 18px; margin-bottom: 16px; font-family: var(--font-heading); color: #FFFFFF; }
 
 .adjust-row { display: flex; gap: 12px; margin-bottom: 14px; }
 .adjust-row.two-up .adjust-block { flex: 1; }
@@ -262,60 +263,140 @@ html, body {
   font-family: var(--font-body); font-size: 15px; margin-bottom: 14px;
 }
 
-/* Streak: weekly connected bar */
-.weekbar {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 6px 10px; margin-top: 4px;
+/* Streak: Thick Pill Card (Duolingo-style gamification) */
+.streak-pill-card {
+  background: var(--surface); border-radius: 20px; padding: 20px 24px 16px;
+  margin: 8px 0 4px; border: 1px solid var(--border);
 }
-.weekbar-day { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; }
-.weekbar-label { font-family: var(--font-mono); font-size: 10px; color: var(--text-muted); margin-bottom: 8px; }
-.weekbar-node {
-  width: 26px; height: 26px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-family: var(--font-mono); z-index: 2;
-  border: 2px solid var(--border); background: var(--bg); color: var(--text-muted);
-}
-.weekbar-node.attended { background: var(--dv-blue); border-color: var(--dv-blue); color: #fff; }
-.weekbar-node.pr { background: var(--dv-yellow); border-color: var(--dv-yellow); color: #15161A; }
-.weekbar-node.rest { background: var(--surface-raised); border-color: var(--dv-grey); color: var(--dv-grey); }
-.weekbar-node.missed { background: #3A1E1E; border-color: var(--dv-red); color: var(--dv-red); }
-.weekbar-node.pending { background: transparent; border-color: var(--border); color: var(--text-muted); border-style: dashed; }
-.weekbar-node.today-pending { background: transparent; border: 2px solid var(--dv-blue); color: var(--dv-blue); }
-.weekbar-node.today-pending::after {
-  content: ''; width: 8px; height: 8px; border-radius: 50%; background: #fff;
-}
-.weekbar-connector {
-  position: absolute; top: 11px; left: 50%; width: 100%; height: 4px;
-  background: rgba(255, 255, 255, 0.06); z-index: 1; border-radius: 2px;
-}
-.weekbar-connector.solid { background: var(--accent-pr); }
-.weekbar-day:last-child .weekbar-connector { display: none; }
-
-/* Hero card wrapper (weekly streak card) */
-.hero-card {
-  background: var(--surface); border-radius: 20px; padding: 16px 16px 6px;
-  margin: 8px 0 4px; border: 1px solid var(--border); min-height: 110px;
-}
-.hero-card-head {
+.streak-pill-top {
   display: flex; justify-content: space-between; align-items: center;
-  font-family: var(--font-heading); font-size: 12px; letter-spacing: 0.06em; color: var(--text-muted);
+  font-family: var(--font-heading); font-size: 12px; letter-spacing: 0.06em; color: #FFFFFF;
+  margin-bottom: 14px;
 }
-.streak-flame-inline { color: var(--accent-pr); font-size: 13px; }
-.hero-card-sub { font-family: var(--font-body); font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.streak-week-range {
+  font-family: var(--font-body); font-size: 11px; color: var(--text-muted);
+}
+
+/* Pill body: track + bg */
+.streak-pill-body { position: relative; margin-bottom: 14px; }
+
+.streak-pill-weekdays {
+  display: flex; justify-content: space-between; margin-bottom: 8px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-muted);
+  letter-spacing: 0.04em;
+}
+.streak-pill-weekdays span { flex: 1; text-align: center; }
+
+.streak-pill-track {
+  position: relative; display: flex; align-items: center;
+  justify-content: space-between; height: 36px;
+}
+
+.streak-pill-bg {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  left: 0; right: 0; height: 36px;
+  background: rgba(250, 204, 21, 0.15);
+  border-radius: 9999px; z-index: 0;
+  pointer-events: none;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), left 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.streak-pill-nodes {
+  position: relative; z-index: 1;
+  display: flex; justify-content: space-between; width: 100%;
+}
+
+/* Node base */
+.streak-node {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-family: var(--font-mono); font-weight: 600;
+  transition: transform 0.15s ease;
+}
+.streak-node:active { transform: scale(0.9); }
+
+/* Node variants */
+.streak-node.attended {
+  background: var(--dv-blue); color: #fff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+}
+.streak-node.pr {
+  background: var(--dv-yellow); color: #15161A;
+  box-shadow: 0 2px 8px rgba(234, 179, 8, 0.35);
+}
+.streak-node.rest {
+  background: var(--surface-raised); color: var(--dv-grey);
+  border: 2px solid var(--dv-grey);
+}
+.streak-node.missed {
+  background: #3A1E1E; color: var(--dv-red);
+  border: 2px solid var(--dv-red);
+}
+.streak-node.recharged {
+  background: #16331E; color: #4ADE80;
+  border: 2px solid #4ADE80;
+  box-shadow: 0 2px 8px rgba(74, 222, 128, 0.3);
+}
+.streak-node.pending {
+  background: transparent; border: 2px dashed var(--border); color: var(--text-muted);
+}
+.streak-node.future {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: transparent; border: 2px solid rgba(255,255,255,0.15);
+  color: transparent; font-size: 0; padding: 0;
+}
+.streak-node.today-pending {
+  background: transparent; border: 2px solid var(--dv-blue); color: var(--dv-blue);
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+.streak-node.today-pending::after {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--dv-blue);
+}
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}
+
+/* Bottom row */
+.streak-pill-bottom {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-top: 12px; border-top: 1px solid var(--border);
+}
+.streak-count-label {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: #FFFFFF;
+}
+.recharge-row { display: flex; gap: 6px; align-items: center; }
+.recharge-icon {
+  width: 20px; height: 20px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.2s ease;
+}
+.recharge-icon svg { width: 14px; height: 14px; }
+.recharge-icon.used { opacity: 0.2; }
+.recharge-icon.available {
+  background: rgba(74, 222, 128, 0.15); color: #4ADE80;
+}
+
+/* Recharged dot on calendar */
+.dot-green { background: #4ADE80; }
 
 .cal-nav { background: none; border: none; color: var(--text-muted); font-size: 20px; padding: 4px 10px; }
 .cal-nav:disabled { opacity: 0.25; }
+.cal-nav-group { display: flex; gap: 4px; }
 
 /* Calendar card */
 .calendar-card {
-  background: var(--surface); border-radius: 20px; padding: 16px;
+  background: var(--surface); border-radius: 20px; padding: 20px 24px;
   border: 1px solid var(--border); margin: 8px 0;
   width: 100%; box-sizing: border-box; overflow: hidden;
 }
+.cal-divider {
+  border: none; border-top: 1px solid var(--border); margin: 16px 0 0;
+}
 
 /* Streak: month dot calendar */
-.cal-header { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; }
-.cal-month { font-family: var(--font-heading); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+.cal-header { display: flex; justify-content: space-between; align-items: baseline; margin-top: 12px; margin-bottom: 20px !important; }
+.cal-month { font-family: var(--font-heading); font-weight: 700; font-size: 15px; letter-spacing: 0.05em; text-transform: uppercase; color: #FFFFFF; }
 .streak-hero-inline { font-family: var(--font-mono); font-size: 13px; }
 .streak-hero-inline #streakHeroNum { color: var(--accent-pr); font-weight: 700; font-size: 16px; }
 .cal-weekday-labels {
@@ -326,12 +407,15 @@ html, body {
 .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px !important; min-height: 240px; margin-bottom: auto; width: 100%; box-sizing: border-box; }
 .cal-cell {
   aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  border-radius: 10px; background: var(--surface-raised); font-family: var(--font-body); font-size: 11px;
-  gap: 3px; color: var(--text-muted); border: 1px solid var(--border);
+  border-radius: 10px; background: transparent; font-family: var(--font-body); font-size: 11px;
+  gap: 3px; color: var(--text-muted); border: none;
   box-sizing: border-box; min-width: 0;
 }
+.cal-cell.is-today {
+  background: var(--dv-yellow); color: #131314; font-weight: bold; border-radius: 12px;
+}
 .cal-cell.blank { visibility: hidden; }
-.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot { width: 4px; height: 4px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot-blue { background: var(--dv-blue); }
 .dot-yellow { background: var(--dv-yellow); }
 .dot-grey { background: var(--dv-grey); }
@@ -341,8 +425,8 @@ html, body {
 /* Calendar legend — vertical stacked */
 .legend {
   display: flex; flex-direction: column; gap: 10px;
-  margin-top: 16px; padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: 14px; padding-top: 0;
+  border-top: none;
 }
 .legend span {
   display: flex; align-items: center; gap: 10px;
@@ -350,7 +434,7 @@ html, body {
 }
 
 /* Delete / edit affordances */
-.trash-btn { color: var(--text-muted); font-family: var(--font-mono); font-size: 14px; padding: 4px 8px; }
+.trash-btn { color: var(--text-muted); font-family: var(--font-mono); font-size: 14px; padding: 12px; margin: -12px; }
 .plan-card-actions { display: flex; align-items: center; gap: 10px; }
 .day-exercise-row { cursor: grab; }
 .day-exercise-row.dragging { opacity: 0.4; }
@@ -378,7 +462,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   padding: 14px 16px; margin: 14px 0;
 }
 .plan-switcher-label { font-family: var(--font-heading); font-size: 11px; color: var(--text-muted); }
-.plan-switcher-name { font-weight: 700; font-size: 18px; margin-top: 2px; font-family: var(--font-heading); }
+.plan-switcher-name { font-weight: 700; font-size: 18px; margin-top: 2px; font-family: var(--font-heading); color: #FFFFFF; }
 
 /* MacroCalc (Nutrition Blueprint) */
 .nutrition-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; margin-top: 10px; overflow: hidden; }
@@ -387,6 +471,7 @@ input[type=number]::-webkit-inner-spin-button { opacity: 1; }
   padding: 16px; font-family: var(--font-heading); font-weight: 700; font-size: 14px;
   cursor: pointer;
 }
+.nutrition-summary { font-family: var(--font-body); font-weight: 400; font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 .nutrition-body { padding: 0 16px 18px; }
 
 .accordion-toggle {

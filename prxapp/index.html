@@ -16,36 +16,49 @@
 
 <header class="topbar">
   <div class="brand">PR<span class="brand-accent">X</span></div>
-  <button class="profile-btn" id="profileBtn">◍</button>
+  <button class="profile-btn" id="profileBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
 </header>
 
 <!-- ============ TAB 1: STREAK (home) ============ -->
 <main id="view-streak" class="view active">
   <div class="greeting-banner" id="greetingBanner">Welcome back, Athlete 👋</div>
-  <div class="hero-card">
-    <div class="hero-card-head">
+  <div class="streak-pill-card">
+    <div class="streak-pill-top">
       <span>WEEKLY STREAK</span>
-      <span class="streak-flame-inline">🔥 <span id="streakCount">0</span></span>
+      <span class="streak-week-range" id="weekRangeLabel">-</span>
     </div>
-    <div class="hero-card-sub" id="weekRangeLabel">-</div>
-    <div class="weekbar" id="weekBar"></div>
+    <div class="streak-pill-body">
+      <div class="streak-pill-weekdays" id="weekLabels"></div>
+      <div class="streak-pill-track" id="weekTrack">
+        <div class="streak-pill-bg" id="pillBg"></div>
+        <div class="streak-pill-nodes" id="weekBar"></div>
+      </div>
+    </div>
+    <div class="streak-pill-bottom">
+      <span class="streak-count-label">🔥 <span id="streakCount">0</span> days</span>
+      <div class="recharge-row" id="rechargeRow"></div>
+    </div>
   </div>
 
   <div class="calendar-card">
     <div class="cal-header">
-      <button class="cal-nav" id="calPrevBtn">‹</button>
       <div class="cal-month" id="calMonthLabel">Month</div>
-      <button class="cal-nav" id="calNextBtn">›</button>
+      <div class="cal-nav-group">
+        <button class="cal-nav" id="calPrevBtn">‹</button>
+        <button class="cal-nav" id="calNextBtn">›</button>
+      </div>
     </div>
     <div class="cal-weekday-labels">
       <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
     </div>
     <div id="monthGrid" class="cal-grid"></div>
+    <hr class="cal-divider">
     <div class="legend">
       <span><i class="dot dot-blue"></i>Attended</span>
       <span><i class="dot dot-yellow"></i>PR</span>
       <span><i class="dot dot-grey"></i>Rest</span>
       <span><i class="dot dot-red"></i>Missed</span>
+      <span><i class="dot dot-green"></i>Recharged</span>
     </div>
   </div>
 
@@ -84,7 +97,7 @@
 
   <div class="nutrition-card">
     <div class="nutrition-head" id="nutritionToggle">
-      <span>📊 MacroCalc</span>
+      <span>📊 MacroCalc <span class="nutrition-summary"></span></span>
       <button class="accordion-toggle" id="nutritionChevron">▾</button>
     </div>
     <div class="nutrition-body" id="nutritionBody" hidden>
@@ -144,7 +157,7 @@
 
 <nav class="dock">
   <button class="dock-btn active" data-view="streak">
-    <span class="dock-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c.5 2.5 2 4.5 2 7a4 4 0 1 1-8 0c0-2.5 2-4.5 2.5-7 1.2 1.8 2.8 2.6 3.5 0z"/><path d="M10 14a2 2 0 1 0 4 0c0-1.5-2-3-2-3s-2 1.5-2 3z"/></svg></span><span>Streak</span>
+    <span class="dock-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3.5z"/></svg></span><span>Streak</span>
   </button>
   <button class="dock-btn" data-view="today">
     <span class="dock-icon">◆</span><span>Today</span>
