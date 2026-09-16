@@ -2,30 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#131314">
-<title>PRX-Personal Record Indexer</title>
-<link rel="manifest" href="manifest.json?v=2">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#19120D">
+<title>PRX – Personal Record Indexer</title>
+<link rel="manifest" href="manifest.json?v=3">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
 
+<!-- MD3 small top app bar -->
 <header class="topbar">
   <div class="brand">PR<span class="brand-accent">X</span></div>
-  <button class="profile-btn" id="profileBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+  <button class="icon-btn" id="profileBtn" aria-label="Your profile">
+    <svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  </button>
 </header>
 
 <!-- ============ TAB 1: STREAK (home) ============ -->
 <main id="view-streak" class="view active">
-  <div class="greeting-banner" id="greetingBanner">Welcome back, Athlete 👋</div>
-  <div class="streak-pill-card">
+  <h1 class="greeting-banner" id="greetingBanner">Welcome to PRX</h1>
+
+  <section class="streak-pill-card">
     <div class="streak-pill-top">
-      <span>WEEKLY STREAK</span>
-      <span class="streak-week-range" id="weekRangeLabel">-</span>
+      <span class="card-title">This week</span>
+      <span class="streak-week-range" id="weekRangeLabel"></span>
     </div>
     <div class="streak-pill-body">
       <div class="streak-pill-weekdays" id="weekLabels"></div>
@@ -35,49 +39,58 @@
       </div>
     </div>
     <div class="streak-pill-bottom">
-      <span class="streak-count-label">🔥 <span id="streakCount">0</span> days</span>
-      <div class="recharge-row" id="rechargeRow"></div>
+      <span class="streak-count-label">
+        <svg class="streak-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3.5z"/></svg>
+        <span class="streak-num" id="streakCount">0</span>
+        <span class="streak-unit" id="streakUnit">day streak</span>
+      </span>
+      <div class="recharge-wrap">
+        <span class="recharge-caption">Recharges</span>
+        <div class="recharge-row" id="rechargeRow"></div>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="calendar-card">
+  <section class="calendar-card">
     <div class="cal-header">
-      <div class="cal-month" id="calMonthLabel">Month</div>
+      <h2 class="cal-month" id="calMonthLabel">Month</h2>
       <div class="cal-nav-group">
-        <button class="cal-nav" id="calPrevBtn">‹</button>
-        <button class="cal-nav" id="calNextBtn">›</button>
+        <button class="icon-btn cal-nav" id="calPrevBtn" aria-label="Previous month">
+          <svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <button class="icon-btn cal-nav" id="calNextBtn" aria-label="Next month">
+          <svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
       </div>
     </div>
     <div class="cal-weekday-labels">
       <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
     </div>
     <div id="monthGrid" class="cal-grid"></div>
-    <hr class="cal-divider">
     <div class="legend">
       <span><i class="dot dot-blue"></i>Attended</span>
       <span><i class="dot dot-yellow"></i>PR</span>
+      <span><i class="dot dot-green"></i>Recharged</span>
       <span><i class="dot dot-grey"></i>Rest</span>
       <span><i class="dot dot-red"></i>Missed</span>
-      <span><i class="dot dot-green"></i>Recharged</span>
     </div>
-  </div>
-
+  </section>
 </main>
 
 <!-- ============ TAB 2: TODAY ============ -->
 <main id="view-today" class="view">
-  <div class="today-status-bar" id="todayStatusBar">TODAY</div>
+  <div class="today-status-bar" id="todayStatusBar"></div>
   <div id="exerciseList" class="exercise-list"></div>
   <div id="emptyToday" class="empty-state" hidden>
-    <svg class="empty-icon" width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4" y="28" width="8" height="8" rx="2" stroke="#8B8E94" stroke-width="2"/>
-      <rect x="52" y="28" width="8" height="8" rx="2" stroke="#8B8E94" stroke-width="2"/>
-      <rect x="12" y="30" width="4" height="4" fill="#8B8E94"/>
-      <rect x="48" y="30" width="4" height="4" fill="#8B8E94"/>
-      <line x1="16" y1="32" x2="48" y2="32" stroke="#8B8E94" stroke-width="3"/>
-    </svg>
-    <p>Nothing set for today.</p>
-    <button class="empty-cta" onclick="switchView('plans')">+ Assign Exercise</button>
+    <div class="empty-icon">
+      <svg viewBox="0 0 24 24"><path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/></svg>
+    </div>
+    <p class="empty-title" id="emptyTodayTitle">Nothing planned today</p>
+    <p class="empty-sub" id="emptyTodaySub">Pick a plan and give today a split to start logging.</p>
+    <button class="btn-filled empty-cta" onclick="switchView('plans')">
+      <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      Assign exercises
+    </button>
   </div>
 </main>
 
@@ -85,28 +98,39 @@
 <main id="view-plans" class="view">
 
   <div class="plan-switcher-card" id="planSwitcherCard" hidden>
-    <div class="plan-switcher-label">Active Plan</div>
+    <div class="plan-switcher-label">Active plan</div>
     <div class="plan-switcher-name" id="planSwitcherName">--</div>
   </div>
 
   <div class="section-row">
-    <div class="section-title">Your Plans</div>
-    <button class="btn-ghost" id="newPlanBtn">+ New plan</button>
+    <h2 class="section-title">Your plans</h2>
   </div>
   <div id="planList" class="plan-list"></div>
 
-  <div class="nutrition-card">
-    <div class="nutrition-head" id="nutritionToggle">
-      <span>📊 MacroCalc <span class="nutrition-summary"></span></span>
-      <button class="accordion-toggle" id="nutritionChevron">▾</button>
+  <section class="nutrition-card">
+    <div class="nutrition-head" id="nutritionToggle" role="button" tabindex="0" aria-controls="nutritionBody">
+      <div class="nutrition-head-icon">
+        <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+      </div>
+      <div class="nutrition-head-text">
+        <span class="nutrition-title">MacroCalc</span>
+        <span class="nutrition-summary">Calories and macros for your goal</span>
+      </div>
+      <button class="icon-btn accordion-toggle" id="nutritionChevron" aria-label="Expand MacroCalc" tabindex="-1">
+        <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
     </div>
     <div class="nutrition-body" id="nutritionBody" hidden>
-      <div id="noProfileMsg" class="empty-sub" style="text-align:left;padding:6px 0 12px;">
-        Set your stats to unlock BMI and macro targets.
-        <button class="btn-ghost" id="setupProfileBtn" style="margin-top:8px;">Set up profile</button>
+      <div id="noProfileMsg" class="no-profile">
+        <p>Add your weight, height and age to see BMI and macro targets.</p>
+        <button class="btn-tonal" id="setupProfileBtn">Set up profile</button>
       </div>
       <div id="nutritionContent">
-        <div class="bmi-row">BMI <strong id="bmiValue">--</strong></div>
+        <div class="bmi-row">
+          <span class="bmi-label">BMI</span>
+          <strong id="bmiValue">--</strong>
+          <span class="bmi-chip" id="bmiCategory"></span>
+        </div>
         <div class="bmi-gauge">
           <div class="bmi-gauge-track">
             <div class="bmi-seg seg-under"></div>
@@ -116,135 +140,178 @@
             <div class="bmi-needle" id="bmiNeedle"></div>
           </div>
           <div class="bmi-seg-labels">
-            <span>Underweight</span><span>Normal</span><span>Overweight</span><span>Obese</span>
+            <span>Under</span><span>Normal</span><span>Over</span><span>Obese</span>
           </div>
         </div>
 
-        <div class="preset-row">
-          <button class="preset-btn" data-preset="aggressive">🥩 Aggressive Bulk</button>
-          <button class="preset-btn active" data-preset="clean">🏋️ Clean Bulk</button>
-          <button class="preset-btn" data-preset="recomp">⚖️ Recomp</button>
-          <button class="preset-btn" data-preset="cut">✂️ Cut</button>
+        <div class="preset-row" role="radiogroup" aria-label="Goal">
+          <button class="preset-btn" data-preset="cut">Cut</button>
+          <button class="preset-btn" data-preset="recomp">Recomp</button>
+          <button class="preset-btn active" data-preset="clean">Clean bulk</button>
+          <button class="preset-btn" data-preset="aggressive">Aggressive bulk</button>
         </div>
 
         <div class="macro-grid">
-          <div class="macro-cell"><div class="macro-num" id="macroCal">--</div><div class="macro-lbl">kcal</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroProtein">--</div><div class="macro-lbl">protein</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroCarbs">--</div><div class="macro-lbl">carbs</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroFat">--</div><div class="macro-lbl">fats</div></div>
+          <div class="macro-cell macro-cell-kcal"><div class="macro-num" id="macroCal">--</div><div class="macro-lbl">kcal</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroProtein">--</div><div class="macro-lbl">Protein</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroCarbs">--</div><div class="macro-lbl">Carbs</div></div>
+          <div class="macro-cell"><div class="macro-num" id="macroFat">--</div><div class="macro-lbl">Fats</div></div>
         </div>
 
         <div class="target-mode">
           <div class="current-weight-badge">
-            <div class="cwb-label">CURRENT WEIGHT</div>
-            <div class="cwb-value" id="curWeightDisplay">-- KG</div>
+            <div class="cwb-label">Current weight</div>
+            <div class="cwb-value" id="curWeightDisplay">-- kg</div>
           </div>
           <div class="slider-row">
-            <label>Target weight: <span id="tgtWeightLbl">--</span>kg</label>
-            <input type="range" id="tgtWeightSlider" min="40" max="160" step="0.5">
+            <div class="slider-head">
+              <label for="tgtWeightSlider">Target weight</label>
+              <span class="slider-value"><span id="tgtWeightLbl">--</span> kg</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="tgtWeightSlider" min="40" max="160" step="0.5">
+              <span class="slider-marker" id="curWeightMarker" aria-hidden="true"></span>
+            </div>
+            <div class="slider-foot">
+              <span>40 kg</span>
+              <span class="delta-chip" id="tgtDeltaChip"></span>
+              <span>160 kg</span>
+            </div>
           </div>
           <div class="slider-row">
-            <label>Timeframe: <span id="weeksLbl">8</span> weeks</label>
-            <input type="range" id="weeksSlider" min="2" max="52" step="1" value="8">
+            <div class="slider-head">
+              <label for="weeksSlider">Timeframe</label>
+              <span class="slider-value"><span id="weeksLbl">8</span> weeks</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="weeksSlider" min="2" max="52" step="1" value="8">
+            </div>
           </div>
           <div id="targetResult" class="target-result">--</div>
         </div>
       </div>
     </div>
-  </div>
+  </section>
 
+  <!-- MD3 extended FAB (only visible while the Plans tab is active) -->
+  <button class="fab" id="newPlanBtn">
+    <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+    <span>New plan</span>
+  </button>
 </main>
 
-<nav class="dock">
+<!-- MD3 navigation bar -->
+<nav class="dock" aria-label="Main">
   <button class="dock-btn active" data-view="streak">
-    <span class="dock-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3.5z"/></svg></span><span>Streak</span>
+    <span class="dock-icon"><svg viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3.5z"/></svg></span>
+    <span class="dock-label">Streak</span>
   </button>
   <button class="dock-btn" data-view="today">
-    <span class="dock-icon">◆</span><span>Today</span>
+    <span class="dock-icon"><svg viewBox="0 0 24 24"><path d="M14.4 14.4 9.6 9.6"/><path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 1-2.829-2.829l6.364-6.364a2 2 0 1 1 2.829 2.829l-1.768 1.767a2 2 0 1 1 2.828 2.829z"/><path d="m21.5 21.5-1.4-1.4"/><path d="M3.9 3.9 2.5 2.5"/><path d="M6.404 12.768a2 2 0 1 1-2.829-2.829l1.768-1.767a2 2 0 1 1-2.828-2.829l2.828-2.828a2 2 0 1 1 2.829 2.828l1.767-1.768a2 2 0 1 1 2.829 2.829z"/></svg></span>
+    <span class="dock-label">Today</span>
   </button>
   <button class="dock-btn" data-view="plans">
-    <span class="dock-icon">▤</span><span>Plans</span>
+    <span class="dock-icon"><svg viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg></span>
+    <span class="dock-label">Plans</span>
   </button>
 </nav>
 
 <!-- Log sheet -->
 <div id="logSheetBackdrop" class="sheet-backdrop"></div>
-<div id="logSheet" class="sheet">
+<div id="logSheet" class="sheet" role="dialog" aria-labelledby="logSheetTitle">
   <div class="sheet-handle"></div>
   <div class="sheet-title" id="logSheetTitle">Exercise</div>
-  <div class="adjust-row">
-    <div class="adjust-block">
-      <div class="adjust-label">Weight (kg)</div>
-      <div class="adjust-track" id="weightTrack" data-field="weight">
-        <div class="adjust-value" id="weightValue">0</div>
-        <div class="adjust-hint">← swipe to adjust →</div>
-      </div>
+
+  <div class="weight-module">
+    <div class="adjust-label">Weight</div>
+    <div class="weight-readout">
+      <button class="step-btn" data-step-field="weight" data-step="-2.5" aria-label="Decrease weight by 2.5 kg">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+      </button>
+      <label class="weight-input-wrap">
+        <input id="weightInput" class="weight-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Weight in kg" value="0">
+        <span class="weight-unit">kg</span>
+      </label>
+      <button class="step-btn" data-step-field="weight" data-step="2.5" aria-label="Increase weight by 2.5 kg">
+        <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      </button>
+    </div>
+    <div class="ruler" id="weightTrack" data-field="weight" aria-hidden="true"></div>
+    <div class="weight-foot">
+      <span class="delta-chip" id="weightDeltaChip"></span>
+      <span class="adjust-hint">Drag the ruler or tap the number</span>
     </div>
   </div>
+
   <div class="adjust-row two-up">
     <div class="adjust-block">
       <div class="adjust-label">Reps</div>
-      <div class="adjust-track small" id="repsTrack" data-field="reps">
-        <div class="adjust-value" id="repsValue">0</div>
+      <div class="stepper">
+        <button class="step-btn small" data-step-field="reps" data-step="-1" aria-label="Fewer reps"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <div class="stepper-value" id="repsTrack" data-field="reps"><span id="repsValue">0</span></div>
+        <button class="step-btn small" data-step-field="reps" data-step="1" aria-label="More reps"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       </div>
     </div>
     <div class="adjust-block">
       <div class="adjust-label">Sets</div>
-      <div class="adjust-track small" id="setsTrack" data-field="sets">
-        <div class="adjust-value" id="setsValue">0</div>
+      <div class="stepper">
+        <button class="step-btn small" data-step-field="sets" data-step="-1" aria-label="Fewer sets"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+        <div class="stepper-value" id="setsTrack" data-field="sets"><span id="setsValue">0</span></div>
+        <button class="step-btn small" data-step-field="sets" data-step="1" aria-label="More sets"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       </div>
     </div>
   </div>
-  <button class="btn-log" id="confirmLogBtn">Log it</button>
+  <button class="btn-filled btn-log" id="confirmLogBtn">Log it</button>
 </div>
 
 <!-- Generic prompt sheet -->
 <div id="promptBackdrop" class="sheet-backdrop"></div>
-<div id="promptSheet" class="sheet small-sheet">
+<div id="promptSheet" class="sheet small-sheet" role="dialog" aria-labelledby="promptTitle">
   <div class="sheet-handle"></div>
   <div class="sheet-title" id="promptTitle">New</div>
-  <input id="promptInput" class="text-input" type="text" placeholder="Name">
+  <input id="promptInput" class="text-input" type="text" placeholder="Name" enterkeyhint="done">
   <div id="promptExtra"></div>
-  <button class="btn-log" id="promptConfirmBtn">Save</button>
+  <button class="btn-filled btn-log" id="promptConfirmBtn">Save</button>
 </div>
 
 <!-- Confirm sheet -->
 <div id="confirmBackdrop" class="sheet-backdrop"></div>
-<div id="confirmSheet" class="sheet small-sheet">
+<div id="confirmSheet" class="sheet small-sheet" role="alertdialog" aria-labelledby="confirmTitle">
   <div class="sheet-handle"></div>
   <div class="sheet-title" id="confirmTitle">Delete?</div>
   <div class="confirm-msg" id="confirmMsg"></div>
   <div class="confirm-btn-row">
-    <button class="btn-ghost btn-cancel" id="confirmCancelBtn">Cancel</button>
-    <button class="btn-log btn-danger" id="confirmDeleteBtn">Delete</button>
+    <button class="btn-text btn-cancel" id="confirmCancelBtn">Cancel</button>
+    <button class="btn-filled btn-danger" id="confirmDeleteBtn">Delete</button>
   </div>
 </div>
 
 <!-- Exercise edit sheet -->
 <div id="editExBackdrop" class="sheet-backdrop"></div>
-<div id="editExSheet" class="sheet small-sheet">
+<div id="editExSheet" class="sheet small-sheet" role="dialog">
   <div class="sheet-handle"></div>
   <div class="sheet-title">Edit exercise</div>
+  <div class="adjust-label">Name</div>
   <input id="editExName" class="text-input" type="text" placeholder="Name">
   <div class="adjust-row two-up">
     <div class="adjust-block">
       <div class="adjust-label">Target reps</div>
-      <input id="editExReps" class="text-input" type="number" inputmode="numeric">
+      <input id="editExReps" class="text-input" type="number" inputmode="numeric" min="1">
     </div>
     <div class="adjust-block">
       <div class="adjust-label">Target sets</div>
-      <input id="editExSets" class="text-input" type="number" inputmode="numeric">
+      <input id="editExSets" class="text-input" type="number" inputmode="numeric" min="1">
     </div>
   </div>
-  <button class="btn-log" id="editExSaveBtn">Save</button>
+  <button class="btn-filled btn-log" id="editExSaveBtn">Save</button>
 </div>
 
 <!-- Profile sheet -->
 <div id="profileBackdrop" class="sheet-backdrop"></div>
-<div id="profileSheet" class="sheet">
+<div id="profileSheet" class="sheet" role="dialog">
   <div class="sheet-handle"></div>
-  <div class="sheet-title">Your Profile</div>
-  <div class="adjust-block" style="margin-bottom:14px;">
+  <div class="sheet-title">Your profile</div>
+  <div class="adjust-block">
     <div class="adjust-label">Name</div>
     <input id="pfName" class="text-input" type="text" placeholder="e.g. Kesav">
   </div>
@@ -272,7 +339,7 @@
       </select>
     </div>
   </div>
-  <div class="adjust-block" style="margin-bottom:14px;">
+  <div class="adjust-block">
     <div class="adjust-label">Activity level</div>
     <select id="pfActivity" class="text-input">
       <option value="1.2">Sedentary (little/no exercise)</option>
@@ -282,10 +349,13 @@
       <option value="1.9">Very active (physical job + training)</option>
     </select>
   </div>
-  <button class="btn-log" id="profileSaveBtn">Save profile</button>
+  <button class="btn-filled btn-log" id="profileSaveBtn">Save profile</button>
 </div>
 
+<!-- MD3 snackbar -->
+<div id="snackbar" class="snackbar" role="status" aria-live="polite"></div>
+
 <script src="js/db.js"></script>
-<script src="js/app.js"></script>
+<script src="js/app.js?v=4"></script>
 </body>
 </html>

@@ -12,6 +12,32 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* One icon language for the whole app (stroke icons, styled by CSS) */
+const ICONS = {
+  check:  '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
+  star:   '<svg viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  bolt:   '<svg viewBox="0 0 24 24"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z"/></svg>',
+  x:      '<svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+  dash:   '<svg viewBox="0 0 24 24"><path d="M6 12h12"/></svg>',
+  plus:   '<svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
+  up:     '<svg viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></svg>',
+  down:   '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  moon:   '<svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
+  trash:  '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  grip:   '<svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
+};
+
+/* MD3 snackbar */
+function showSnackbar(msg, variant) {
+  const el = document.getElementById('snackbar');
+  if (!el) return;
+  el.textContent = msg;
+  el.className = 'snackbar show' + (variant ? ' ' + variant : '');
+  clearTimeout(showSnackbar._t);
+  showSnackbar._t = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
 /* ---------- View routing ---------- */
 document.querySelectorAll('.dock-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
@@ -32,114 +58,261 @@ async function getActivePlan() {
   return plans.find(p => p.isActive) || null;
 }
 
+let _todayRenderId = 0;
 async function renderToday() {
+  const rid = ++_todayRenderId;
   const now = new Date();
-  const dayName = WEEKDAY_NAMES[now.getDay()].toUpperCase();
+  const dayName = WEEKDAY_NAMES[now.getDay()];
   const statusBar = document.getElementById('todayStatusBar');
-  const plan = await getActivePlan();
   const list = document.getElementById('exerciseList');
   const empty = document.getElementById('emptyToday');
-  list.innerHTML = '';
+  const emptyTitle = document.getElementById('emptyTodayTitle');
+  const emptySub = document.getElementById('emptyTodaySub');
 
-  if (!plan) {
-    statusBar.textContent = dayName;
+  const setStatus = (chipHtml) => {
+    statusBar.innerHTML = `<span class="today-day">${dayName}</span>${chipHtml || ''}`;
+  };
+  const showEmpty = (title, sub) => {
+    list.replaceChildren();
+    if (emptyTitle) emptyTitle.textContent = title;
+    if (emptySub) emptySub.textContent = sub;
     empty.hidden = false;
+  };
+
+  const plan = await getActivePlan();
+  if (rid !== _todayRenderId) return;
+  if (!plan) {
+    setStatus('');
+    showEmpty('No active plan', 'Create a plan in Plans and give today a split to start logging.');
     return;
   }
+
   const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
+  if (rid !== _todayRenderId) return;
   const day = planDays.find(pd => pd.weekday === now.getDay());
   if (!day) {
-    statusBar.textContent = dayName + ' ➔ Rest Day';
-    empty.hidden = false;
+    setStatus(`<span class="today-chip rest">${ICONS.moon} Rest day</span>`);
+    showEmpty('Rest day', `${plan.name} has nothing on ${dayName}s. Recover, or add a split in Plans.`);
     return;
   }
-  statusBar.textContent = dayName + ' ➔ ' + (day.label || 'Session').toUpperCase();
+  setStatus(`<span class="today-chip">${escapeHtml(day.label || 'Session')}</span>`);
 
   let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
   exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
-  if (exercises.length === 0) { empty.hidden = false; return; }
-  empty.hidden = true;
+  if (rid !== _todayRenderId) return;
+  if (exercises.length === 0) {
+    showEmpty('No exercises yet', `Add exercises to ${day.label || 'this split'} in Plans.`);
+    return;
+  }
 
+  const today = todayStr();
+  const cards = [];
   for (const ex of exercises) {
     const logs = await DB.getAllByIndex('logEntries', 'exerciseId', ex.id);
     const last = logs.sort((a,b) => b.ts - a.ts)[0];
+    const doneToday = logs.some(l => l.date === today);
+    const initial = escapeHtml((ex.name.trim()[0] || '?').toUpperCase());
     const card = document.createElement('div');
-    card.className = 'exercise-card';
+    card.className = 'exercise-card' + (doneToday ? ' logged-today' : '');
+    card.setAttribute('role', 'button');
+    card.tabIndex = 0;
     card.innerHTML = `
-      <div>
+      <div class="exercise-avatar">${doneToday ? ICONS.check : initial}</div>
+      <div class="exercise-main">
         <div class="exercise-name">${escapeHtml(ex.name)}</div>
-        <div class="exercise-meta">target ${ex.targetSets}×${ex.targetReps}</div>
+        <div class="exercise-meta">${ex.targetSets} × ${ex.targetReps} target</div>
       </div>
-      <div class="exercise-lastlog${last ? '' : ' muted'}">${last ? last.weight + 'kg' : '--'}</div>
-    `;
+      <div class="exercise-lastlog${last ? '' : ' muted'}">
+        <span class="ll-num">${!last ? '--' : (last.weight > 0 ? last.weight : 'BW')}</span>
+        <span class="ll-lbl">${!last ? 'no log' : (last.weight > 0 ? 'kg last' : 'bodyweight')}</span>
+      </div>`;
     card.addEventListener('click', () => openLogSheet(ex, last));
-    list.appendChild(card);
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogSheet(ex, last); } });
+    cards.push(card);
   }
+  if (rid !== _todayRenderId) return;
+  empty.hidden = true;
+  list.replaceChildren(...cards);
 }
 
 /* ---------- Log sheet ---------- */
 let currentExercise = null;
+let currentLastLog = null;
 let adjustState = { weight: 0, reps: 0, sets: 0 };
+const ADJUST_LIMITS = { weight: [0, 500], reps: [1, 100], sets: [1, 20] };
+const WEIGHT_STEP = 2.5;     // kg per ruler tick and per −/+ tap
+const WEIGHT_TICK_PX = 24;   // must match the 24px tick spacing in .ruler (css/style.css)
+
+function clampField(field, v) {
+  const [lo, hi] = ADJUST_LIMITS[field];
+  return Math.min(hi, Math.max(lo, Math.round(v * 100) / 100));
+}
+function fmtKg(n) { return String(Math.round(n * 100) / 100); }
 
 function openLogSheet(ex, last) {
   currentExercise = ex;
+  currentLastLog = last || null;
   adjustState.weight = last ? last.weight : 0;
-  adjustState.reps = last ? last.reps : ex.targetReps;
-  adjustState.sets = last ? last.sets : ex.targetSets;
+  adjustState.reps = clampField('reps', last ? last.reps : ex.targetReps);
+  adjustState.sets = clampField('sets', last ? last.sets : ex.targetSets);
   document.getElementById('logSheetTitle').textContent = ex.name;
   updateAdjustDisplay();
   showSheet('logSheet');
 }
+
 function updateAdjustDisplay() {
-  document.getElementById('weightValue').textContent = adjustState.weight;
+  const w = adjustState.weight;
+  const input = document.getElementById('weightInput');
+  if (document.activeElement !== input) input.value = fmtKg(w);
   document.getElementById('repsValue').textContent = adjustState.reps;
   document.getElementById('setsValue').textContent = adjustState.sets;
+
+  /* Ruler indicator: ticks slide with the value (drag right = heavier) */
+  document.getElementById('weightTrack').style.setProperty('--rx', `${(w / WEIGHT_STEP) * WEIGHT_TICK_PX}px`);
+
+  /* Change vs the last logged set */
+  const chip = document.getElementById('weightDeltaChip');
+  if (!currentLastLog) {
+    chip.className = 'delta-chip';
+    chip.textContent = 'First log for this lift';
+    return;
+  }
+  const d = Math.round((w - currentLastLog.weight) * 100) / 100;
+  if (d > 0) {
+    chip.className = 'delta-chip up';
+    chip.innerHTML = `${ICONS.up} +${fmtKg(d)} kg vs last`;
+  } else if (d < 0) {
+    chip.className = 'delta-chip down';
+    chip.innerHTML = `${ICONS.down} −${fmtKg(-d)} kg vs last`;
+  } else {
+    chip.className = 'delta-chip';
+    chip.textContent = `Same as last (${fmtKg(w)} kg)`;
+  }
 }
-function attachSwipe(trackId, field, stepPx, stepValue, min) {
+
+function attachSwipe(trackId, field, stepPx, stepValue) {
   const el = document.getElementById(trackId);
-  let startX = 0, startVal = 0, dragging = false;
-  const start = (x) => { dragging = true; startX = x; startVal = adjustState[field]; };
+  let startX = 0, startVal = 0, dragging = false, lastSteps = 0;
+  const start = (x) => {
+    const wi = document.getElementById('weightInput');
+    if (document.activeElement === wi) wi.blur();
+    dragging = true; startX = x; startVal = adjustState[field]; lastSteps = 0;
+    el.classList.add('dragging');
+  };
   const move = (x) => {
     if (!dragging) return;
-    const delta = x - startX;
-    const steps = Math.round(delta / stepPx);
-    const next = startVal + steps * stepValue;
-    adjustState[field] = Math.max(min, Math.round(next * 100) / 100);
+    const steps = Math.round((x - startX) / stepPx);
+    if (steps === lastSteps) return;
+    lastSteps = steps;
+    const next = clampField(field, startVal + steps * stepValue);
+    if (next !== adjustState[field]) { adjustState[field] = next; vibrate(5); updateAdjustDisplay(); }
+  };
+  const onMouseMove = (e) => move(e.clientX);
+  const end = () => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('dragging');
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', end);
+  };
+  el.addEventListener('touchstart', e => start(e.touches[0].clientX), { passive: true });
+  el.addEventListener('touchmove', e => move(e.touches[0].clientX), { passive: true });
+  el.addEventListener('touchend', end);
+  el.addEventListener('touchcancel', end);
+  el.addEventListener('mousedown', e => {
+    start(e.clientX);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', end);
+  });
+}
+attachSwipe('weightTrack', 'weight', WEIGHT_TICK_PX, WEIGHT_STEP);
+attachSwipe('repsTrack', 'reps', 20, 1);
+attachSwipe('setsTrack', 'sets', 20, 1);
+
+/* −/+ buttons (press and hold to repeat) */
+document.querySelectorAll('.step-btn').forEach(btn => {
+  const field = btn.dataset.stepField;
+  const step = Number(btn.dataset.step);
+  let holdTimer = null, repeatTimer = null;
+  const bump = () => {
+    const wi = document.getElementById('weightInput');
+    if (document.activeElement === wi) wi.blur();
+    const next = clampField(field, adjustState[field] + step);
+    if (next === adjustState[field]) return;
+    adjustState[field] = next;
+    vibrate(8);
     updateAdjustDisplay();
   };
-  const end = () => { dragging = false; };
-  el.addEventListener('touchstart', e => start(e.touches[0].clientX), {passive: true});
-  el.addEventListener('touchmove', e => move(e.touches[0].clientX), {passive: true});
-  el.addEventListener('touchend', end);
-  el.addEventListener('mousedown', e => start(e.clientX));
-  window.addEventListener('mousemove', e => move(e.clientX));
-  window.addEventListener('mouseup', end);
-}
-attachSwipe('weightTrack', 'weight', 24, 2.5, 0);
-attachSwipe('repsTrack', 'reps', 20, 1, 0);
-attachSwipe('setsTrack', 'sets', 20, 1, 0);
+  const stop = () => { clearTimeout(holdTimer); clearInterval(repeatTimer); };
+  btn.addEventListener('pointerdown', () => {
+    bump();
+    stop();
+    holdTimer = setTimeout(() => { repeatTimer = setInterval(bump, 90); }, 400);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, stop));
+  btn.addEventListener('click', e => { if (e.detail === 0) bump(); }); // keyboard activation
+});
+
+/* Typed weight */
+(function wireWeightInput() {
+  const input = document.getElementById('weightInput');
+  const parse = () => parseFloat(String(input.value).replace(',', '.'));
+  input.addEventListener('focus', () => input.select());
+  input.addEventListener('input', () => {
+    const v = parse();
+    if (!Number.isNaN(v)) { adjustState.weight = clampField('weight', v); updateAdjustDisplay(); }
+  });
+  const commit = () => {
+    const v = parse();
+    if (!Number.isNaN(v)) adjustState.weight = clampField('weight', v);
+    input.value = fmtKg(adjustState.weight);
+    updateAdjustDisplay();
+  };
+  input.addEventListener('change', commit);
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
+})();
 
 async function checkIsPR(exerciseId, weight, reps) {
   const logs = await DB.getAllByIndex('logEntries', 'exerciseId', exerciseId);
-  if (logs.length === 0) return true;
-  const historicalMaxWeight = Math.max(...logs.map(l => l.weight));
-  if (weight < historicalMaxWeight) return false;
-  const bestRepsAtThisWeight = Math.max(0, ...logs.filter(l => l.weight === weight).map(l => l.reps));
-  return reps >= bestRepsAtThisWeight;
+  if (logs.length === 0) return true;                 // first ever log counts as the baseline PR
+  const maxWeight = Math.max(...logs.map(l => l.weight));
+  if (weight > maxWeight) return true;
+  if (weight < maxWeight) return false;
+  const bestRepsAtMax = Math.max(0, ...logs.filter(l => l.weight === maxWeight).map(l => l.reps));
+  return reps > bestRepsAtMax;                        // strictly more reps; a tie is not a PR
 }
 
+let _logInFlight = false;
 document.getElementById('confirmLogBtn').addEventListener('click', async () => {
-  if (!currentExercise) return;
-  const isPR = await checkIsPR(currentExercise.id, adjustState.weight, adjustState.reps);
-  await DB.add('logEntries', {
-    exerciseId: currentExercise.id, date: todayStr(),
-    reps: adjustState.reps, sets: adjustState.sets, weight: adjustState.weight,
-    isPR, ts: Date.now()
-  });
-  vibrate(isPR ? [30,50,30] : [30]);
-  hideSheet('logSheet');
-  renderToday();
-  updateStreakPill();
+  if (!currentExercise || _logInFlight) return;
+  const wi = document.getElementById('weightInput');
+  if (document.activeElement === wi) wi.blur();   // commits a typed value
+  if (adjustState.reps < 1 || adjustState.sets < 1) {
+    showSnackbar('Reps and sets need to be at least 1.');
+    return;
+  }
+  _logInFlight = true;
+  try {
+    const ex = currentExercise;
+    const isPR = await checkIsPR(ex.id, adjustState.weight, adjustState.reps);
+    await DB.add('logEntries', {
+      exerciseId: ex.id, date: todayStr(),
+      reps: adjustState.reps, sets: adjustState.sets, weight: adjustState.weight,
+      isPR, ts: Date.now()
+    });
+    vibrate(isPR ? [30,50,30] : [30]);
+    hideSheet('logSheet');
+    showSnackbar(
+      isPR ? `New PR on ${ex.name}: ${fmtKg(adjustState.weight)} kg × ${adjustState.reps}`
+           : `Logged ${ex.name}`,
+      isPR ? 'pr' : ''
+    );
+    renderToday();
+    updateStreakPill();
+  } finally {
+    _logInFlight = false;
+  }
 });
 
 /* ---------- Sheets ---------- */
@@ -171,24 +344,42 @@ document.getElementById('confirmDeleteBtn').addEventListener('click', async () =
 
 let promptCallback = null;
 function openPrompt(title, placeholder, callback) {
+  const input = document.getElementById('promptInput');
   document.getElementById('promptTitle').textContent = title;
-  document.getElementById('promptInput').placeholder = placeholder;
-  document.getElementById('promptInput').value = '';
+  input.placeholder = placeholder;
+  input.value = '';
+  input.classList.remove('invalid');
   promptCallback = callback;
   showSheet('promptSheet');
-  setTimeout(() => document.getElementById('promptInput').focus(), 200);
+  setTimeout(() => input.focus(), 200);
 }
-document.getElementById('promptConfirmBtn').addEventListener('click', () => {
-  const val = document.getElementById('promptInput').value.trim();
+function submitPrompt() {
+  const input = document.getElementById('promptInput');
+  const val = input.value.trim();
+  if (!val) {
+    input.classList.add('invalid');
+    input.focus();
+    return;
+  }
+  input.classList.remove('invalid');
   hideSheet('promptSheet');
   if (promptCallback) promptCallback(val);
+}
+document.getElementById('promptConfirmBtn').addEventListener('click', submitPrompt);
+document.getElementById('promptInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); submitPrompt(); }
 });
 
 /* ================= PROFILE ================= */
+const PROFILE_FIELDS = [
+  ['pfWeight', 25, 350],
+  ['pfHeight', 100, 250],
+  ['pfAge', 13, 100]
+];
 async function getProfile() {
   return await DB.get('profileStore', 1);
 }
-document.getElementById('profileBtn').addEventListener('click', async () => {
+async function openProfileSheet() {
   const p = await getProfile();
   if (p) {
     document.getElementById('pfName').value = p.name || '';
@@ -198,49 +389,69 @@ document.getElementById('profileBtn').addEventListener('click', async () => {
     document.getElementById('pfGender').value = p.gender;
     document.getElementById('pfActivity').value = p.activityLevel;
   }
+  PROFILE_FIELDS.forEach(([id]) => document.getElementById(id).classList.remove('invalid'));
   showSheet('profileSheet');
-});
-document.getElementById('setupProfileBtn').addEventListener('click', () => showSheet('profileSheet'));
+}
+document.getElementById('profileBtn').addEventListener('click', openProfileSheet);
+document.getElementById('setupProfileBtn').addEventListener('click', openProfileSheet);
 document.getElementById('profileSaveBtn').addEventListener('click', async () => {
+  let ok = true;
+  for (const [id, lo, hi] of PROFILE_FIELDS) {
+    const el = document.getElementById(id);
+    const v = Number(el.value);
+    const bad = !v || v < lo || v > hi;
+    el.classList.toggle('invalid', bad);
+    if (bad) ok = false;
+  }
+  if (!ok) {
+    showSnackbar('Check weight (25–350 kg), height (100–250 cm) and age (13–100).');
+    return;
+  }
   const existing = await getProfile();
   const profile = {
+    ...(existing || {}),
     id: 1,
-    name: document.getElementById('pfName').value.trim() || '',
+    name: document.getElementById('pfName').value.trim(),
     weight: Number(document.getElementById('pfWeight').value),
     height: Number(document.getElementById('pfHeight').value),
     age: Number(document.getElementById('pfAge').value),
     gender: document.getElementById('pfGender').value,
-    activityLevel: Number(document.getElementById('pfActivity').value),
-    streakRecharges: existing?.streakRecharges ?? 3,
-    rechargeUsedThisWeek: existing?.rechargeUsedThisWeek ?? false
+    activityLevel: Number(document.getElementById('pfActivity').value)
   };
-  if (!profile.weight || !profile.height || !profile.age) return;
   await DB.put('profileStore', profile);
   hideSheet('profileSheet');
+  showSnackbar('Profile saved');
   renderNutritionCard();
   renderGreeting(profile);
 });
 
 /* ================= GREETING ================= */
-function renderGreeting(profile) {
+async function renderGreeting(profile) {
   const banner = document.getElementById('greetingBanner');
   if (!banner) return;
-  if (profile && profile.name) {
-    banner.innerHTML = `Welcome back, <span class="greeting-name">${escapeHtml(profile.name)}</span> 👋`;
-    return;
+  const p = profile || await getProfile();
+  const logs = await DB.getAll('logEntries');
+  const name = p && p.name ? `<span class="greeting-name">${escapeHtml(p.name)}</span>` : '';
+  if (logs.length === 0) {
+    banner.innerHTML = name ? `Hi, ${name}` : 'Welcome to PRX';
+  } else {
+    banner.innerHTML = name ? `Welcome back, ${name}` : 'Welcome back';
   }
-  getProfile().then(p => {
-    const name = (p && p.name) ? p.name : 'Athlete';
-    banner.innerHTML = `Welcome back, <span class="greeting-name">${escapeHtml(name)}</span> 👋`;
-  });
 }
 
 /* ================= MACROCALC (Nutrition Blueprint) ================= */
-document.getElementById('nutritionToggle').addEventListener('click', () => {
+function toggleNutrition() {
   const body = document.getElementById('nutritionBody');
   const chevron = document.getElementById('nutritionChevron');
+  const head = document.getElementById('nutritionToggle');
   body.hidden = !body.hidden;
   chevron.classList.toggle('expanded', !body.hidden);
+  head.setAttribute('aria-expanded', String(!body.hidden));
+  if (!body.hidden) renderNutritionCard().catch(() => {});
+}
+document.getElementById('nutritionToggle').addEventListener('click', toggleNutrition);
+document.getElementById('nutritionToggle').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleNutrition(); }
 });
 
 function calcBMR(profile) {
@@ -296,6 +507,26 @@ document.querySelectorAll('.preset-btn').forEach(btn => {
   });
 });
 
+/* BMI bands. The gauge draws 4 EQUAL segments, so the needle has to be
+   mapped per band — a single linear 15→40 mapping puts a BMI of 22
+   (Normal) inside the Underweight segment. */
+const BMI_BANDS = [
+  { key: 'under',   label: 'Underweight', min: 15,   max: 18.5 },
+  { key: 'healthy', label: 'Normal',      min: 18.5, max: 25 },
+  { key: 'over',    label: 'Overweight',  min: 25,   max: 30 },
+  { key: 'obese',   label: 'Obese',       min: 30,   max: 40 }
+];
+function bmiCategory(bmi) {
+  return BMI_BANDS.find(b => bmi < b.max) || BMI_BANDS[BMI_BANDS.length - 1];
+}
+function bmiToGaugePct(bmi) {
+  const clamped = Math.min(40, Math.max(15, bmi));
+  let i = BMI_BANDS.findIndex(b => clamped < b.max);
+  if (i === -1) i = BMI_BANDS.length - 1;
+  const b = BMI_BANDS[i];
+  return (i + (clamped - b.min) / (b.max - b.min)) * (100 / BMI_BANDS.length);
+}
+
 async function renderNutritionCard() {
   const profile = await getProfile();
   const noMsg = document.getElementById('noProfileMsg');
@@ -310,7 +541,7 @@ async function renderNutritionCard() {
   if (nutritionHead) {
     const summarySpan = nutritionHead.querySelector('.nutrition-summary');
     if (summarySpan) {
-      summarySpan.textContent = `BMI ${bmi.toFixed(1)} · ${m.calories.toLocaleString()} kcal`;
+      summarySpan.textContent = `${m.calories.toLocaleString()} kcal a day, BMI ${bmi.toFixed(1)}`;
     }
   }
 
@@ -325,11 +556,10 @@ async function renderNutritionCard() {
 
   if (bmiValueEl) {
     bmiValueEl.textContent = bmi.toFixed(1);
-    if (bmiNeedleEl) {
-      const clamped = Math.min(40, Math.max(15, bmi));
-      const pct = ((clamped - 15) / (40 - 15)) * 100;
-      bmiNeedleEl.style.left = `${pct}%`;
-    }
+    const cat = bmiCategory(bmi);
+    const catEl = document.getElementById('bmiCategory');
+    if (catEl) { catEl.textContent = cat.label; catEl.className = `bmi-chip ${cat.key}`; }
+    if (bmiNeedleEl) bmiNeedleEl.style.left = `${bmiToGaugePct(bmi)}%`;
   }
 
   renderMacrosForPreset(profile, activePreset);
@@ -338,100 +568,115 @@ async function renderNutritionCard() {
     btn.classList.toggle('active', btn.dataset.preset === activePreset);
   });
 
-  if (curWeightEl) curWeightEl.textContent = profile.weight + ' KG';
+  if (curWeightEl) curWeightEl.textContent = profile.weight + ' kg';
 
-  if (!tgtSlider || !weeksSlider || !tgtLbl || !weeksSlider || !targetResultEl) return;
+  if (!tgtSlider || !weeksSlider || !tgtLbl || !weeksLbl || !targetResultEl) return;
 
-  tgtSlider.value = profile.weight;
-  tgtLbl.textContent = profile.weight;
+  const sMin = Number(tgtSlider.min), sMax = Number(tgtSlider.max);
+  const pctOf = v => ((Math.min(sMax, Math.max(sMin, v)) - sMin) / (sMax - sMin)) * 100;
+  const curPct = pctOf(profile.weight);
+  tgtSlider.value = profile.weight;          // the browser clamps this to 40–160
+  tgtLbl.textContent = tgtSlider.value;
+  const marker = document.getElementById('curWeightMarker');
+  if (marker) marker.style.setProperty('--cur', `${curPct}%`);
+  const deltaChip = document.getElementById('tgtDeltaChip');
 
   const updateTarget = () => {
-    tgtLbl.textContent = tgtSlider.value;
-    weeksLbl.textContent = weeksSlider.value;
-    const delta = Number(tgtSlider.value) - profile.weight;
+    const target = Number(tgtSlider.value);
     const weeks = Number(weeksSlider.value);
-    const totalKcal = delta * 7700;
-    const dailyDelta = Math.round(totalKcal / (weeks * 7));
-    const bmr = calcBMR({ ...profile, weight: profile.weight });
-    const tdee = bmr * profile.activityLevel;
-    const targetCalories = Math.round(tdee + dailyDelta);
-    const verb = dailyDelta > 0 ? 'surplus' : dailyDelta < 0 ? 'deficit' : 'maintenance';
-    targetResultEl.textContent =
-      `${targetCalories} kcal/day (${dailyDelta >= 0 ? '+' : ''}${dailyDelta} ${verb}) over ${weeks} weeks`;
+    tgtLbl.textContent = target;
+    weeksLbl.textContent = weeks;
+
+    /* Track fills */
+    const tPct = pctOf(target);
+    tgtSlider.style.setProperty('--a', `${Math.min(curPct, tPct)}%`);
+    tgtSlider.style.setProperty('--b', `${Math.max(curPct, tPct)}%`);
+    const wMin = Number(weeksSlider.min), wMax = Number(weeksSlider.max);
+    weeksSlider.style.setProperty('--a', '0%');
+    weeksSlider.style.setProperty('--b', `${((weeks - wMin) / (wMax - wMin)) * 100}%`);
+
+    /* Gain / lose indicator */
+    const delta = Math.round((target - profile.weight) * 10) / 10;
+    tgtSlider.classList.toggle('losing', delta < 0);
+    if (deltaChip) {
+      if (delta > 0)      { deltaChip.className = 'delta-chip up';   deltaChip.innerHTML = `${ICONS.up} Gain ${delta} kg`; }
+      else if (delta < 0) { deltaChip.className = 'delta-chip down'; deltaChip.innerHTML = `${ICONS.down} Lose ${-delta} kg`; }
+      else                { deltaChip.className = 'delta-chip';      deltaChip.textContent = 'Maintain'; }
+    }
+
+    /* Calories */
+    const MIN_KCAL = 1200;
+    const dailyDelta = Math.round((delta * 7700) / (weeks * 7));
+    const tdee = calcBMR(profile) * profile.activityLevel;
+    const rawTarget = Math.round(tdee + dailyDelta);
+    const targetCalories = Math.max(MIN_KCAL, rawTarget);
+    const weeklyPct = (Math.abs(delta) / weeks) / profile.weight * 100;
+    const tooFast = weeklyPct > 1 || rawTarget < MIN_KCAL;
+    const detail = dailyDelta === 0
+      ? `Maintenance for ${weeks} weeks`
+      : `${dailyDelta > 0 ? '+' : '−'}${Math.abs(dailyDelta).toLocaleString()} kcal ${dailyDelta > 0 ? 'surplus' : 'deficit'} for ${weeks} weeks`;
+    targetResultEl.classList.toggle('warn', tooFast);
+    targetResultEl.innerHTML =
+      `<strong>${targetCalories.toLocaleString()} kcal/day</strong>${detail}` +
+      (tooFast ? `<span class="tr-warn">That pace is over 1% of body weight a week. Try a longer timeframe.</span>` : '');
   };
   tgtSlider.oninput = updateTarget;
   weeksSlider.oninput = updateTarget;
   updateTarget();
 }
 
-/* ================= STREAK: day-status engine ================= */
-function getMondayStr(dateStr) {
+/* ================= STREAK: day-status engine =================
+   Pure function of the log history (nothing to persist):
+   - Weeks start on Sunday (same as the weekly bar and the calendar).
+   - A day with a log = attended (or pr). Streak +1.
+   - A day without a log = rest, unless there were already 2+ inactive
+     days in the previous 6, then it is missed and the streak resets...
+   - ...unless a recharge is available: max 1 per week, from a bank of 3.
+     The bank refills to 3 when the previous week had 5+ logged days.
+*/
+const RECHARGE_BANK = 3;
+const RECHARGE_REFILL_DAYS = 5;
+
+function getWeekStartStr(dateStr) {
   const d = parseDate(dateStr);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  d.setDate(d.getDate() - d.getDay());
   return fmtDate(d);
 }
 
-function getWeekMondayStr() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const mon = new Date(now);
-  mon.setDate(now.getDate() + diff);
-  return fmtDate(mon);
-}
-
-async function checkAndRestockRecharges(profile) {
-  if (!profile) return;
-  const todayS = todayStr();
-  const thisMonday = getWeekMondayStr();
-  const lastMonday = addDays(thisMonday, -7);
-  const lastSunday = addDays(thisMonday, -1);
-
+async function computeDayStatuses(throughDateStr) {
   const logs = await DB.getAll('logEntries');
-  const lastWeekLogs = logs.filter(l => l.date >= lastMonday && l.date <= lastSunday);
-  const uniqueDays = new Set(lastWeekLogs.map(l => l.date));
-  const daysAttended = uniqueDays.size;
-
-  const today = new Date();
-  const isMonday = today.getDay() === 1;
-  const alreadyResetThisWeek = profile.rechargeUsedThisWeek === false && profile.streakRecharges === 3;
-
-  if (isMonday || !alreadyResetThisWeek) {
-    profile.rechargeUsedThisWeek = false;
-    if (daysAttended >= 5) {
-      profile.streakRecharges = 3;
-    }
-    await DB.put('profileStore', profile);
+  if (logs.length === 0) {
+    return { statuses: {}, streak: 0, firstDate: null, rechargesRemaining: RECHARGE_BANK, rechargeUsedThisWeek: false };
   }
-}
-
-async function computeDayStatuses(throughDateStr, profile) {
-  const logs = await DB.getAll('logEntries');
-  const recharges = profile?.streakRecharges ?? 3;
-  let rechargedThisWeek = profile?.rechargeUsedThisWeek ?? false;
-
-  if (logs.length === 0) return { statuses: {}, streak: 0, firstDate: null, rechargesRemaining: recharges };
   const byDate = {};
   logs.forEach(l => { (byDate[l.date] ||= []).push(l); });
   const firstDate = Object.keys(byDate).sort()[0];
 
-  const thisMonday = getWeekMondayStr();
-
   const statuses = {};
   const order = [];
   let streak = 0;
+  let bank = RECHARGE_BANK;
+  let weekStart = getWeekStartStr(firstDate);
+  let usedThisWeek = false;
+  let loggedDaysThisWeek = 0;
+
   let cursor = firstDate;
-  let rechargesUsed = 0;
   while (cursor <= throughDateStr) {
+    const ws = getWeekStartStr(cursor);
+    if (ws !== weekStart) {
+      if (loggedDaysThisWeek >= RECHARGE_REFILL_DAYS) bank = RECHARGE_BANK;
+      weekStart = ws;
+      usedThisWeek = false;
+      loggedDaysThisWeek = 0;
+    }
+
     const dayLogs = byDate[cursor];
-    const isToday = (cursor === throughDateStr);
     let status;
     if (dayLogs && dayLogs.length > 0) {
       status = dayLogs.some(l => l.isPR) ? 'pr' : 'attended';
       streak += 1;
-    } else if (isToday) {
+      loggedDaysThisWeek += 1;
+    } else if (cursor === throughDateStr) {
       status = 'pending';
     } else {
       let priorInactive = 0;
@@ -439,13 +684,12 @@ async function computeDayStatuses(throughDateStr, profile) {
         const s = statuses[order[i]];
         if (s === 'rest' || s === 'missed' || s === 'recharged') priorInactive++;
       }
-      const canRecharge = !rechargedThisWeek && (recharges - rechargesUsed) > 0;
       if (priorInactive < 2) {
         status = 'rest';
-      } else if (canRecharge && cursor >= thisMonday) {
+      } else if (!usedThisWeek && bank > 0) {
         status = 'recharged';
-        rechargedThisWeek = true;
-        rechargesUsed++;
+        usedThisWeek = true;
+        bank -= 1;
         streak += 1;
       } else {
         status = 'missed';
@@ -456,12 +700,15 @@ async function computeDayStatuses(throughDateStr, profile) {
     order.push(cursor);
     cursor = addDays(cursor, 1);
   }
-  return { statuses, streak, firstDate, rechargesRemaining: recharges - rechargesUsed, rechargeUsedThisWeek: rechargedThisWeek };
+  return {
+    statuses, streak, firstDate,
+    rechargesRemaining: bank,
+    rechargeUsedThisWeek: weekStart === getWeekStartStr(throughDateStr) && usedThisWeek
+  };
 }
 
 async function updateStreakPill() {
-  const profile = await getProfile();
-  const data = await computeDayStatuses(todayStr(), profile);
+  const data = await computeDayStatuses(todayStr());
   document.getElementById('streakCount').textContent = data.streak;
 }
 
@@ -489,10 +736,7 @@ document.getElementById('calNextBtn').addEventListener('click', () => {
 async function renderStreak() {
   const today = new Date();
   const todayS = todayStr();
-  const profile = await getProfile();
-  await checkAndRestockRecharges(profile);
-  const freshProfile = await getProfile();
-  const data = await computeDayStatuses(todayS, freshProfile);
+  const data = await computeDayStatuses(todayS);
   document.getElementById('streakCount').textContent = data.streak;
 
   const sunday = new Date(today);
@@ -504,26 +748,30 @@ async function renderStreak() {
   /* Weekday labels */
   const weekLabels = document.getElementById('weekLabels');
   weekLabels.innerHTML = '';
-  const wkLabels = ['S','M','T','W','T','F','S'];
   for (let i = 0; i < 7; i++) {
     const span = document.createElement('span');
-    span.textContent = wkLabels[i];
+    span.textContent = WEEKDAY_SHORT[i];
+    if (i === today.getDay()) span.className = 'is-today';
     weekLabels.appendChild(span);
   }
 
-  /* Day nodes + pill background */
+  /* Day nodes */
+  const NODE_ICON = { attended: ICONS.check, pr: ICONS.star, recharged: ICONS.bolt, missed: ICONS.x, rest: ICONS.dash };
+  const NODE_LABEL = {
+    attended: 'attended', pr: 'personal record', recharged: 'recharged', missed: 'missed',
+    rest: 'rest day', pending: 'no data', future: 'upcoming', 'today-pending': 'today, not logged yet'
+  };
   const weekBar = document.getElementById('weekBar');
   weekBar.innerHTML = '';
   const pillBg = document.getElementById('pillBg');
-  let streakStartIdx = -1;
-  let streakEndIdx = -1;
   const statuses = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(sunday); d.setDate(sunday.getDate() + i);
     const dS = fmtDate(d);
     let status;
     if (dS === todayS) {
-      status = data.statuses[dS] || 'today-pending';
+      const s = data.statuses[dS];
+      status = (s && s !== 'pending') ? s : 'today-pending';
     } else if (dS < todayS) {
       status = (data.firstDate && dS >= data.firstDate) ? data.statuses[dS] : 'pending';
     } else {
@@ -531,34 +779,37 @@ async function renderStreak() {
     }
     statuses.push(status);
 
-    const isActive = (status === 'attended' || status === 'pr' || status === 'recharged');
-    if (isActive) {
-      if (streakStartIdx === -1) streakStartIdx = i;
-      streakEndIdx = i;
-    }
-
-    const glyph = (status==='attended') ? '✓' : (status==='pr') ? '★' : (status==='recharged') ? '⚡' : (status==='missed') ? '✕' : (status==='rest') ? '—' : '';
     const node = document.createElement('div');
     node.className = `streak-node ${status}`;
-    node.textContent = glyph;
+    node.innerHTML = NODE_ICON[status] || '';
+    node.setAttribute('role', 'img');
+    node.setAttribute('aria-label', `${WEEKDAY_NAMES[i]}: ${NODE_LABEL[status] || status}`);
     weekBar.appendChild(node);
   }
 
-  /* Position thick pill background behind consecutive active days */
-  if (streakStartIdx >= 0 && streakEndIdx >= streakStartIdx) {
-    const nodeW = 30;
-    const trackW = weekBar.offsetWidth || 280;
-    const gap = trackW > 0 ? (trackW - 7 * nodeW) / 6 : 0;
-    const leftPx = streakStartIdx * (nodeW + gap);
-    const rightPx = (6 - streakEndIdx) * (nodeW + gap);
-    pillBg.style.left = `calc(${leftPx}px - 4px)`;
-    pillBg.style.right = `calc(${rightPx}px - 4px)`;
-    pillBg.style.width = 'auto';
+  /* Pill = the streak run that reaches today (rest days inside don't break it) */
+  const ACTIVE = new Set(['attended', 'pr', 'recharged']);
+  const IN_RUN = new Set(['attended', 'pr', 'recharged', 'rest', 'today-pending']);
+  const todayIdx = today.getDay();
+  let end = -1;
+  for (let i = todayIdx; i >= 0; i--) { if (ACTIVE.has(statuses[i])) { end = i; break; } }
+  for (let i = end + 1; end >= 0 && i <= todayIdx; i++) { if (!IN_RUN.has(statuses[i])) end = -1; }
+  let start = end;
+  for (let i = end - 1; end >= 0 && i >= 0 && IN_RUN.has(statuses[i]); i--) {
+    if (ACTIVE.has(statuses[i])) start = i;
+  }
+  const nodes = weekBar.children;
+  if (end >= 0) {
+    const pad = 4;
+    const left = nodes[start].offsetLeft - pad;
+    const width = nodes[end].offsetLeft + nodes[end].offsetWidth - nodes[start].offsetLeft + pad * 2;
+    pillBg.style.left = `${left}px`;
+    pillBg.style.width = `${width}px`;
   } else {
     pillBg.style.left = '50%';
-    pillBg.style.right = '50%';
     pillBg.style.width = '0';
   }
+  pillBg.style.right = 'auto';
 
   /* Recharge icons in bottom row */
   const rechargeRow = document.getElementById('rechargeRow');
@@ -593,7 +844,7 @@ async function renderStreak() {
     const d = new Date(calViewYear, calViewMonth, day);
     const dS = fmtDate(d);
     const cell = document.createElement('div');
-    cell.className = 'cal-cell' + (dS === todayS ? ' is-today' : '');
+    cell.className = 'cal-cell' + (dS === todayS ? ' is-today' : '') + (dS > todayS ? ' is-future' : '');
     let dotHtml = '<div class="dot-slot"></div>';
     if (dS <= todayS && data.firstDate && dS >= data.firstDate) {
       const status = data.statuses[dS];
@@ -620,27 +871,38 @@ async function renderPlanSwitcherCard() {
   document.getElementById('planSwitcherName').textContent = plan.name;
 }
 
+function planBadgeHtml(isActive) {
+  return isActive ? `${ICONS.check} Active` : 'Set active';
+}
+
 async function renderPlans() {
   const plans = await DB.getAll('plans');
   const list = document.getElementById('planList');
   list.innerHTML = '';
+  if (plans.length === 0) {
+    list.innerHTML = '<div class="plan-empty">No plans yet. Tap <strong>New plan</strong> to build your first split.</div>';
+    return;
+  }
   for (const p of plans) {
     const card = document.createElement('div');
     card.className = 'plan-card' + (p.isActive ? ' is-active' : '');
     card.dataset.planId = p.id;
 
-    /* Card head row */
     const head = document.createElement('div');
     head.className = 'plan-card-head';
+    head.setAttribute('role', 'button');
+    head.tabIndex = 0;
     head.innerHTML = `
       <span class="plan-card-name">${escapeHtml(p.name)}</span>
       <div class="plan-card-actions">
-        <span class="plan-card-badge">${p.isActive ? 'ACTIVE' : 'tap to activate'}</span>
-        <span class="trash-btn" data-plan-id="${p.id}">🗑</span>
+        <span class="plan-card-badge">${planBadgeHtml(p.isActive)}</span>
+        <button class="icon-btn trash-btn" data-plan-id="${p.id}" aria-label="Delete plan ${escapeHtml(p.name)}">${ICONS.trash}</button>
       </div>
     `;
-    head.querySelector('.plan-card-name').addEventListener('click', () => togglePlanCard(p, card, plans));
-    head.querySelector('.plan-card-badge').addEventListener('click', () => togglePlanCard(p, card, plans));
+    head.addEventListener('click', () => togglePlanCard(p, card, plans));
+    head.addEventListener('keydown', e => {
+      if (e.target === head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); togglePlanCard(p, card, plans); }
+    });
     head.querySelector('.trash-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       openConfirm('Delete plan?', `"${p.name}" and all its splits and exercises will be removed. Logged history stays intact.`, async () => {
@@ -653,7 +915,6 @@ async function renderPlans() {
     });
     card.appendChild(head);
 
-    /* Card body — weekday grid (hidden until expanded) */
     const body = document.createElement('div');
     body.className = 'plan-card-body';
     card.appendChild(body);
@@ -675,11 +936,12 @@ async function togglePlanCard(p, card, plans) {
     document.querySelectorAll('.plan-card').forEach(c => {
       c.classList.remove('is-active');
       const badge = c.querySelector('.plan-card-badge');
-      if (badge) badge.textContent = 'tap to activate';
+      if (badge) badge.innerHTML = planBadgeHtml(false);
     });
     card.classList.add('is-active');
     const badge = card.querySelector('.plan-card-badge');
-    if (badge) badge.textContent = 'ACTIVE';
+    if (badge) badge.innerHTML = planBadgeHtml(true);
+    showSnackbar(`${p.name} is now your active plan`);
 
     await renderPlanSwitcherCard();
     renderToday();
@@ -703,33 +965,45 @@ async function renderPlanCardEditor(plan, card) {
   grid.className = 'weekday-grid';
   for (let w = 0; w < 7; w++) {
     const day = planDays.find(pd => pd.weekday === w);
-    const cell = document.createElement('div');
+    const cell = document.createElement('button');
     cell.className = 'weekday-cell' + (day ? ' has-exercises' : '');
     cell.textContent = WEEKDAY_SHORT[w];
-    cell.addEventListener('click', () => openDayEditorInline(plan, w, day, body));
+    cell.setAttribute('aria-label', `${WEEKDAY_NAMES[w]}${day ? ': ' + day.label : ''}`);
+    cell.addEventListener('click', () => openDayEditorInline(plan, w, body));
     grid.appendChild(cell);
   }
   body.appendChild(grid);
 
   const hint = document.createElement('div');
-  hint.className = 'exercise-meta';
-  hint.style.textAlign = 'center';
+  hint.className = 'plan-hint';
   hint.textContent = 'Tap a day to set its split and exercises';
   body.appendChild(hint);
 }
 
-async function openDayEditorInline(plan, weekday, existingDay, container) {
-  let day = existingDay;
-  if (!day) {
-    openPrompt('Split name', 'e.g. Push Day', async (label) => {
-      if (!label) return;
-      const id = await DB.add('planDays', { planId: plan.id, weekday, label });
-      day = { id, planId: plan.id, weekday, label };
-      renderDayExerciseEditorInline(day, plan, container);
-    });
+function markSelectedWeekday(container, weekday) {
+  container.querySelectorAll('.weekday-cell').forEach((c, w) => {
+    c.classList.toggle('is-selected', w === weekday);
+    c.setAttribute('aria-pressed', w === weekday ? 'true' : 'false');
+  });
+}
+
+async function openDayEditorInline(plan, weekday, container) {
+  /* Always re-read: the grid can be stale right after a split is created */
+  const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
+  const day = planDays.find(pd => pd.weekday === weekday);
+  markSelectedWeekday(container, weekday);
+  if (day) {
+    renderDayExerciseEditorInline(day, plan, container);
     return;
   }
-  renderDayExerciseEditorInline(day, plan, container);
+  container.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
+  openPrompt(`Split for ${WEEKDAY_NAMES[weekday]}`, 'e.g. Push day', async (label) => {
+    if (!label) return;
+    const id = await DB.add('planDays', { planId: plan.id, weekday, label });
+    const cell = container.querySelectorAll('.weekday-cell')[weekday];
+    if (cell) cell.classList.add('has-exercises');
+    renderDayExerciseEditorInline({ id, planId: plan.id, weekday, label }, plan, container);
+  });
 }
 
 async function renderDayExerciseEditorInline(day, plan, container) {
@@ -738,37 +1012,34 @@ async function renderDayExerciseEditorInline(day, plan, container) {
 
   /* Remove any existing day editor in this container */
   container.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
+  markSelectedWeekday(container, day.weekday);
 
+  const count = exercises.length;
   const box = document.createElement('div');
   box.className = 'day-exercise-editor';
-
-  const headRow = document.createElement('div');
-  headRow.style.display = 'flex';
-  headRow.style.justifyContent = 'space-between';
-  headRow.style.alignItems = 'flex-start';
-  headRow.innerHTML = `
-    <div>
-      <div class="section-title" style="margin:0;">${escapeHtml(day.label)}</div>
-      <div class="exercise-meta" style="margin-top:2px;">${WEEKDAY_NAMES[day.weekday]}</div>
-    </div>
-    <span class="trash-btn delete-day-split-btn">🗑</span>`;
-  box.appendChild(headRow);
+  box.innerHTML = `
+    <div class="day-editor-head">
+      <div>
+        <div class="day-editor-title">${escapeHtml(day.label)}</div>
+        <div class="day-editor-sub">${count} exercise${count === 1 ? '' : 's'} on ${WEEKDAY_NAMES[day.weekday]}</div>
+      </div>
+      <button class="icon-btn danger delete-day-split-btn" aria-label="Delete this split">${ICONS.trash}</button>
+    </div>`;
 
   const rowsWrap = document.createElement('div');
-  rowsWrap.id = 'exRowsWrap';
-  rowsWrap.style.marginTop = '10px';
-  exercises.forEach(ex => rowsWrap.appendChild(buildExerciseRow(ex, day, plan)));
+  rowsWrap.className = 'day-exercise-rows';
+  exercises.forEach(ex => rowsWrap.appendChild(buildExerciseRow(ex, day, plan, rowsWrap)));
   box.appendChild(rowsWrap);
 
   const addBtn = document.createElement('button');
-  addBtn.className = 'btn-ghost';
-  addBtn.style.marginTop = '10px';
-  addBtn.textContent = '+ Add exercise';
+  addBtn.className = 'btn-text add-ex-btn';
+  addBtn.innerHTML = `${ICONS.plus} Add exercise`;
   addBtn.addEventListener('click', () => {
-    openPrompt('Exercise name', 'e.g. Bench Press', async (name) => {
+    openPrompt('Exercise name', 'e.g. Bench press', async (name) => {
       if (!name) return;
-      const maxOrder = Math.max(-1, ...exercises.map(e => e.order||0));
-      await DB.add('exercises', { planDayId: day.id, name, targetReps: 8, targetSets: 3, order: maxOrder+1 });
+      const current = await DB.getAllByIndex('exercises', 'planDayId', day.id);
+      const maxOrder = Math.max(-1, ...current.map(e => e.order || 0));
+      await DB.add('exercises', { planDayId: day.id, name, targetReps: 8, targetSets: 3, order: maxOrder + 1 });
       renderDayExerciseEditorInline(day, plan, container);
     });
   });
@@ -778,13 +1049,10 @@ async function renderDayExerciseEditorInline(day, plan, container) {
 
   box.querySelector('.delete-day-split-btn').addEventListener('click', () => {
     openConfirm('Delete this split?', `"${day.label}" and its exercises will be removed from ${WEEKDAY_NAMES[day.weekday]}.`, async () => {
-      for (const ex of exercises) await DB.delete('exercises', ex.id);
+      const current = await DB.getAllByIndex('exercises', 'planDayId', day.id);
+      for (const ex of current) await DB.delete('exercises', ex.id);
       await DB.delete('planDays', day.id);
-      box.remove();
-      /* Re-render the card's weekday grid */
-      const body = container;
-      body.querySelectorAll('.day-exercise-editor').forEach(n => n.remove());
-      renderPlanCardEditor(plan, body.closest('.plan-card'));
+      renderPlanCardEditor(plan, container.closest('.plan-card'));
     });
   });
 }
@@ -812,18 +1080,19 @@ document.getElementById('newPlanBtn').addEventListener('click', () => {
 
 let currentEditingPlan = null;
 
-function buildExerciseRow(ex, day, plan) {
+function buildExerciseRow(ex, day, plan, wrap) {
   const row = document.createElement('div');
   row.className = 'day-exercise-row';
   row.dataset.exId = ex.id;
   row.innerHTML = `
     <div class="day-exercise-row-main">
-      <span class="drag-handle">⠿</span>
-      <span>${escapeHtml(ex.name)} — ${ex.targetSets}×${ex.targetReps}</span>
+      <span class="drag-handle" aria-hidden="true">${ICONS.grip}</span>
+      <span class="ex-row-name">${escapeHtml(ex.name)}</span>
+      <span class="ex-row-meta">${ex.targetSets} × ${ex.targetReps}</span>
     </div>
     <div class="day-exercise-row-actions">
-      <span class="edit-pencil">✎</span>
-      <span class="remove-x">✕</span>
+      <button class="icon-btn edit-pencil" aria-label="Edit ${escapeHtml(ex.name)}">${ICONS.pencil}</button>
+      <button class="icon-btn remove-x" aria-label="Remove ${escapeHtml(ex.name)}">${ICONS.x}</button>
     </div>
   `;
   row.querySelector('.edit-pencil').addEventListener('click', (e) => {
@@ -835,66 +1104,84 @@ function buildExerciseRow(ex, day, plan) {
     openConfirm('Remove exercise?', `"${ex.name}" will be removed from this split.`, async () => {
       await DB.delete('exercises', ex.id);
       const container = row.closest('.plan-card-body');
-      renderDayExerciseEditorInline(day, plan, container);
+      if (container) renderDayExerciseEditorInline(day, plan, container);
     });
   });
-  attachDragReorder(row);
+  attachDragReorder(row, wrap);
   return row;
 }
 
-function attachDragReorder(row) {
+function attachDragReorder(row, wrap) {
   const handle = row.querySelector('.drag-handle');
   let startY = 0, dragging = false;
+
   const onMove = (clientY) => {
     if (!dragging) return;
-    row.style.transform = `translateY(${clientY - startY}px)`;
-    const wrap = document.getElementById('exRowsWrap');
+    const before = row.offsetTop;
     const siblings = [...wrap.children].filter(c => c !== row);
-    for (const sib of siblings) {
-      const rect = sib.getBoundingClientRect();
-      const mid = rect.top + rect.height/2;
-      if (clientY < mid && sib.previousSibling !== row) {
-        wrap.insertBefore(row, sib);
-        row.style.transform = `translateY(${clientY - startY}px)`;
-        break;
-      } else if (clientY >= mid && sib.nextSibling !== row) {
-        wrap.insertBefore(row, sib.nextSibling);
-        row.style.transform = `translateY(${clientY - startY}px)`;
-        break;
-      }
-    }
+    const next = siblings.find(sib => {
+      const r = sib.getBoundingClientRect();
+      return clientY < r.top + r.height / 2;
+    });
+    if (next) { if (row.nextElementSibling !== next) wrap.insertBefore(row, next); }
+    else if (wrap.lastElementChild !== row) wrap.appendChild(row);
+    startY += row.offsetTop - before;           // keep the row under the finger after a swap
+    row.style.transform = `translateY(${clientY - startY}px)`;
   };
+  const onMouseMove = (e) => onMove(e.clientY);
   const onEnd = async () => {
     if (!dragging) return;
     dragging = false;
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onEnd);
     row.classList.remove('dragging');
     row.style.transform = '';
-    const wrap = document.getElementById('exRowsWrap');
     const ids = [...wrap.children].map(c => Number(c.dataset.exId));
     for (let i = 0; i < ids.length; i++) {
       const exRecord = await DB.get('exercises', ids[i]);
-      exRecord.order = i;
-      await DB.put('exercises', exRecord);
+      if (exRecord && exRecord.order !== i) {
+        exRecord.order = i;
+        await DB.put('exercises', exRecord);
+      }
     }
   };
-  handle.addEventListener('touchstart', e => { dragging = true; startY = e.touches[0].clientY; row.classList.add('dragging'); }, {passive: true});
-  handle.addEventListener('touchmove', e => onMove(e.touches[0].clientY), {passive: true});
+  const begin = (y) => { dragging = true; startY = y; row.classList.add('dragging'); vibrate(10); };
+
+  handle.addEventListener('touchstart', e => begin(e.touches[0].clientY), { passive: true });
+  handle.addEventListener('touchmove', e => onMove(e.touches[0].clientY), { passive: true });
   handle.addEventListener('touchend', onEnd);
-  handle.addEventListener('mousedown', e => { dragging = true; startY = e.clientY; row.classList.add('dragging'); });
-  window.addEventListener('mousemove', e => onMove(e.clientY));
-  window.addEventListener('mouseup', onEnd);
+  handle.addEventListener('touchcancel', onEnd);
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    begin(e.clientY);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onEnd);
+  });
 }
 
 function openExerciseEditSheet(ex, day, plan) {
-  document.getElementById('editExName').value = ex.name;
-  document.getElementById('editExReps').value = ex.targetReps;
-  document.getElementById('editExSets').value = ex.targetSets;
+  const nameEl = document.getElementById('editExName');
+  const repsEl = document.getElementById('editExReps');
+  const setsEl = document.getElementById('editExSets');
+  nameEl.value = ex.name;
+  repsEl.value = ex.targetReps;
+  setsEl.value = ex.targetSets;
+  [nameEl, repsEl, setsEl].forEach(el => el.classList.remove('invalid'));
   showSheet('editExSheet');
   document.getElementById('editExSaveBtn').onclick = async () => {
-    ex.name = document.getElementById('editExName').value.trim() || ex.name;
-    ex.targetReps = Number(document.getElementById('editExReps').value) || ex.targetReps;
-    ex.targetSets = Number(document.getElementById('editExSets').value) || ex.targetSets;
-    await DB.put('exercises', ex);
+    const name = nameEl.value.trim();
+    const reps = Math.round(Number(repsEl.value));
+    const sets = Math.round(Number(setsEl.value));
+    const badName = !name, badReps = !(reps >= 1 && reps <= 100), badSets = !(sets >= 1 && sets <= 20);
+    nameEl.classList.toggle('invalid', badName);
+    repsEl.classList.toggle('invalid', badReps);
+    setsEl.classList.toggle('invalid', badSets);
+    if (badName || badReps || badSets) return;
+
+    const fresh = (await DB.get('exercises', ex.id)) || ex;   // keeps the latest order
+    Object.assign(fresh, { name, targetReps: reps, targetSets: sets });
+    Object.assign(ex, fresh);
+    await DB.put('exercises', fresh);
     hideSheet('editExSheet');
     const container = document.querySelector('.plan-card.is-expanded .plan-card-body');
     if (container) renderDayExerciseEditorInline(day, plan, container);

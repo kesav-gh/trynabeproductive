@@ -1,4 +1,5 @@
-const CACHE_NAME = 'prx-v4';
+const CACHE_NAME = 'prx-v5';
+const FONT_CACHE = 'prx-fonts-v1';
 const ASSETS = [
   './',
   './index.html',
@@ -10,50 +11,60 @@ const ASSETS = [
   './icons/icon-512.png'
 ];
 
-// Install Event - Force network fetch to bypass stale HTTP cache
+// Install: pre-cache the app shell
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(
-        ASSETS.map((url) => new Request(url, { cache: 'reload' }))
-      );
-    })
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
   self.skipWaiting();
 });
 
-
-// Activate Event - Purge old caches (pr-logger-v1) and claim clients immediately
+// Activate: drop old caches, take control
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((key) => key !== CACHE_NAME && key !== FONT_CACHE).map((key) => caches.delete(key))
+      ))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch Event - Network-First strategy for local scripts/styles to bypass stale PWA caches
 self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
 
-  event.respondWith(
-    fetch(event.request)
-      .then((networkResponse) => {
-        // Clone and store fresh copy in cache if network request succeeds
-        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-          const responseToCache = networkResponse.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return networkResponse;
+  // Google Fonts: cache-first so Roboto Flex still loads offline
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+    event.respondWith(
+      caches.open(FONT_CACHE).then(async (cache) => {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        const res = await fetch(req);
+        if (res.ok || res.type === 'opaque') cache.put(req, res.clone());
+        return res;
       })
-      .catch(() => {
-        // Fallback to offline cache if network fails
-        return caches.match(event.request);
+    );
+    return;
+  }
+
+  if (url.origin !== self.location.origin) return;
+
+  // App files: network-first, cache fallback.
+  // ignoreSearch lets "app.js?v=4" / "manifest.json?v=3" match the pre-cached files offline.
+  event.respondWith(
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+        }
+        return res;
+      })
+      .catch(async () => {
+        const hit = await caches.match(req, { ignoreSearch: true });
+        if (hit) return hit;
+        if (req.mode === 'navigate') return caches.match('./index.html');
+        return Response.error();
       })
   );
 });
