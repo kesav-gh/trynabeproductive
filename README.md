@@ -1,0 +1,3 @@
+1. So uhh basically I make some fun hobby projects in my free time to hopefully learn something and actually get some proficiency in building stuff , learn using different tools , and so on to hopefully get some cash lad :(
+2. Umm ts mostly would be almost 90% vibe coded , but i hope i would make some real progress in my own skill to hopefully reduce tht number to atmost 50%
+3. Mostly the applications or games I would be making would be from real problems and needs which I experienced in my personal and thought to automate the problem or simply thought to make my spin of it. 
