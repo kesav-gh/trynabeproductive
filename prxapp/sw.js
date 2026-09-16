@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prx-v3';
+const CACHE_NAME = 'prx-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -10,15 +10,18 @@ const ASSETS = [
   './icons/icon-512.png'
 ];
 
-// Install Event - Pre-cache assets and immediately skip waiting
+// Install Event - Force network fetch to bypass stale HTTP cache
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      return cache.addAll(
+        ASSETS.map((url) => new Request(url, { cache: 'reload' }))
+      );
     })
   );
   self.skipWaiting();
 });
+
 
 // Activate Event - Purge old caches (pr-logger-v1) and claim clients immediately
 self.addEventListener('activate', (event) => {
