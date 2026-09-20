@@ -258,9 +258,9 @@ svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width:
 .streak-node.recharged svg { fill: currentColor; stroke: none; }
 .streak-node.rest      { background: var(--md-surface-container-highest); color: var(--md-on-surface-variant); }
 .streak-node.missed    { background: var(--md-error-container); color: var(--md-on-error-container); }
-.streak-node.pending   { border: 1.5px dashed var(--md-outline-variant); }
-.streak-node.future    { border: 1.5px solid var(--md-outline-variant); }
-.streak-node.today-pending { border: 2px solid var(--md-primary); }
+.streak-node.pending   { border: 1.5px dashed var(--md-outline-variant); color: var(--md-on-surface-variant); }
+.streak-node.future    { border: 1.5px solid var(--md-outline-variant); color: var(--md-on-surface-variant); opacity: 0.5; }
+.streak-node.today-pending { border: 2px solid var(--md-primary); background: rgba(255,182,139,0.12); color: var(--md-primary); }
 .streak-node.today-pending::after {
   content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--md-primary);
   animation: today-pulse 2s var(--ease-standard) infinite;
@@ -770,6 +770,26 @@ input[type=number] { -moz-appearance: textfield; }
 }
 .snackbar.show { opacity: 1; transform: none; }
 .snackbar.pr { background: var(--st-pr); color: var(--st-on-pr); font-weight: 600; }
+
+/* ------------------------------------------------------------------
+   Text link + Backup row
+   ------------------------------------------------------------------ */
+.text-link {
+  color: var(--md-primary);
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 1px solid var(--md-primary);
+  transition: opacity var(--dur-short) linear;
+}
+.text-link:active { opacity: 0.7; }
+
+.backup-row {
+  display: flex; gap: 10px; margin-top: 16px;
+}
+.backup-btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.backup-btn svg { width: 18px; height: 18px; }
 
 /* ------------------------------------------------------------------
    Reduced motion

@@ -42,6 +42,10 @@ function showSnackbar(msg, variant) {
 document.querySelectorAll('.dock-btn').forEach(btn => {
   btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
+document.getElementById('brandLogo').addEventListener('click', () => switchView('today'));
+document.getElementById('brandLogo').addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchView('today'); }
+});
 function switchView(name) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.dock-btn').forEach(b => b.classList.remove('active'));
@@ -880,7 +884,7 @@ async function renderPlans() {
   const list = document.getElementById('planList');
   list.innerHTML = '';
   if (plans.length === 0) {
-    list.innerHTML = '<div class="plan-empty">No plans yet. Tap <strong>New plan</strong> to build your first split.</div>';
+    list.innerHTML = '<div class="plan-empty">No plans yet. Tap <span id="inlineNewPlanLink" class="text-link">New plan</span> to build your first split.</div>';
     return;
   }
   for (const p of plans) {
@@ -1078,6 +1082,36 @@ document.getElementById('newPlanBtn').addEventListener('click', () => {
   });
 });
 
+/* Empty-state CTA on Today tab → switch to Plans and open new-plan prompt */
+function promptNewPlan() {
+  switchView('plans');
+  setTimeout(() => {
+    openPrompt('New plan', 'e.g. Push Pull Legs', async (name) => {
+      if (!name) return;
+      const plans = await DB.getAll('plans');
+      const isFirst = plans.length === 0;
+      await DB.add('plans', { name, isActive: isFirst });
+      await renderPlans();
+      await renderPlanSwitcherCard();
+    });
+  }, 150);
+}
+document.getElementById('emptyTodayCta').addEventListener('click', promptNewPlan);
+
+/* Inline "New plan" link inside the Plans empty-state bubble */
+document.getElementById('planList').addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'inlineNewPlanLink') {
+    openPrompt('New plan', 'e.g. Push Pull Legs', async (name) => {
+      if (!name) return;
+      const plans = await DB.getAll('plans');
+      const isFirst = plans.length === 0;
+      await DB.add('plans', { name, isActive: isFirst });
+      await renderPlans();
+      await renderPlanSwitcherCard();
+    });
+  }
+});
+
 let currentEditingPlan = null;
 
 function buildExerciseRow(ex, day, plan, wrap) {
@@ -1187,6 +1221,75 @@ function openExerciseEditSheet(ex, day, plan) {
     if (container) renderDayExerciseEditorInline(day, plan, container);
   };
 }
+
+/* ================= BACKUP / RESTORE ================= */
+async function exportAllData() {
+  const stores = ['plans', 'planDays', 'exercises', 'logEntries', 'profileStore'];
+  const dump = {};
+  for (const storeName of stores) {
+    dump[storeName] = await DB.getAll(storeName);
+  }
+  dump._exported = new Date().toISOString();
+  dump._version = 1;
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `prx-backup-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showSnackbar('Data exported');
+}
+
+async function importData(json) {
+  const stores = ['plans', 'planDays', 'exercises', 'logEntries', 'profileStore'];
+  let imported = 0;
+  for (const storeName of stores) {
+    const records = json[storeName];
+    if (!Array.isArray(records)) continue;
+    for (const record of records) {
+      await DB.put(storeName, record);
+      imported++;
+    }
+  }
+  showSnackbar(`Imported ${imported} records`);
+  collapseAllPlans();
+  await renderPlans();
+  await renderPlanSwitcherCard();
+  renderNutritionCard().catch(() => {});
+  renderToday();
+  updateStreakPill();
+  renderStreak();
+  renderGreeting();
+}
+
+document.getElementById('exportDataBtn').addEventListener('click', exportAllData);
+document.getElementById('importDataBtn').addEventListener('click', () => {
+  document.getElementById('importFileInput').click();
+});
+document.getElementById('importFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try {
+      const json = JSON.parse(ev.target.result);
+      if (!json._version && !json.plans && !json.logEntries) {
+        showSnackbar('Invalid backup file');
+        return;
+      }
+      openConfirm(
+        'Import data?',
+        'This will merge the backup into your existing data. Existing records with the same ID will be overwritten.',
+        async () => { await importData(json); }
+      );
+    } catch {
+      showSnackbar('Could not parse backup file');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
 
 /* ================= Init ================= */
 (async function init() {

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prx-v5';
+const CACHE_NAME = 'prx-v6';
 const FONT_CACHE = 'prx-fonts-v1';
 const ASSETS = [
   './',

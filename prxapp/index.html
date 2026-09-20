@@ -16,7 +16,7 @@
 
 <!-- MD3 small top app bar -->
 <header class="topbar">
-  <div class="brand">PR<span class="brand-accent">X</span></div>
+  <div class="brand" id="brandLogo" role="button" tabindex="0" aria-label="Go to Today">PR<span class="brand-accent">X</span></div>
   <button class="icon-btn" id="profileBtn" aria-label="Your profile">
     <svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
   </button>
@@ -87,9 +87,9 @@
     </div>
     <p class="empty-title" id="emptyTodayTitle">Nothing planned today</p>
     <p class="empty-sub" id="emptyTodaySub">Pick a plan and give today a split to start logging.</p>
-    <button class="btn-filled empty-cta" onclick="switchView('plans')">
+    <button class="btn-filled empty-cta" id="emptyTodayCta">
       <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-      Assign exercises
+      Create new plan
     </button>
   </div>
 </main>
@@ -350,6 +350,17 @@
     </select>
   </div>
   <button class="btn-filled btn-log" id="profileSaveBtn">Save profile</button>
+  <div class="backup-row">
+    <button class="btn-tonal backup-btn" id="exportDataBtn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export data
+    </button>
+    <button class="btn-tonal backup-btn" id="importDataBtn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Import data
+    </button>
+  </div>
+  <input type="file" id="importFileInput" accept=".json" hidden>
 </div>
 
 <!-- MD3 snackbar -->
