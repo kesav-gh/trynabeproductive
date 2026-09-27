@@ -10,17 +10,54 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=4">
+<link rel="stylesheet" href="css/style.css?v=7">
+<script src="js/db.js?v=7"></script>
+<script src="js/app.js?v=7"></script>
 </head>
 <body>
 
 <!-- MD3 small top app bar -->
 <header class="topbar">
   <div class="brand" id="brandLogo" role="button" tabindex="0" aria-label="Go to Today">PR<span class="brand-accent">X</span></div>
-  <button class="icon-btn" id="profileBtn" aria-label="Your profile">
-    <svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  <button class="icon-btn" id="menuBtn" aria-label="Open menu">
+    <svg viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg>
   </button>
 </header>
+
+<!-- Navigation Drawer backdrop -->
+<div id="drawerBackdrop" class="drawer-backdrop"></div>
+
+<!-- Navigation Drawer -->
+<aside id="navDrawer" class="nav-drawer" role="navigation" aria-label="Menu">
+  <div class="drawer-header">
+    <span class="drawer-brand">PR<span class="brand-accent">X</span></span>
+    <span class="drawer-sub">Personal Record Indexer</span>
+  </div>
+  <nav class="drawer-items">
+    <button class="drawer-item" id="drawerProfile">
+      <span class="drawer-item-icon"><svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+      <span class="drawer-item-text">My Profile</span>
+    </button>
+    <button class="drawer-item" id="drawerTimer">
+      <span class="drawer-item-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M12 5V3"/></svg></span>
+      <span class="drawer-item-text">Stopwatch</span>
+      <span class="drawer-item-meta" id="drawerTimerMeta"></span>
+    </button>
+    <button class="drawer-item" id="drawerMacro">
+      <span class="drawer-item-icon"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>
+      <span class="drawer-item-text">Macro Calculator</span>
+    </button>
+    <button class="drawer-item" id="drawerBackup">
+      <span class="drawer-item-icon"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></span>
+      <span class="drawer-item-text">Export or Import Data</span>
+    </button>
+    <div class="drawer-divider"></div>
+    <button class="drawer-item" id="drawerAbout">
+      <span class="drawer-item-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>
+      <span class="drawer-item-text">About PRX &amp; Source Code</span>
+    </button>
+  </nav>
+</aside>
 
 <!-- ============ TAB 1: STREAK (home) ============ -->
 <main id="view-streak" class="view active">
@@ -107,88 +144,19 @@
   </div>
   <div id="planList" class="plan-list"></div>
 
-  <section class="nutrition-card">
-    <div class="nutrition-head" id="nutritionToggle" role="button" tabindex="0" aria-controls="nutritionBody">
-      <div class="nutrition-head-icon">
-        <svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
-      </div>
-      <div class="nutrition-head-text">
-        <span class="nutrition-title">MacroCalc</span>
-        <span class="nutrition-summary">Calories and macros for your goal</span>
-      </div>
-      <button class="icon-btn accordion-toggle" id="nutritionChevron" aria-label="Expand MacroCalc" tabindex="-1">
-        <svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
-      </button>
+  <section class="records-hub" id="recordsHub">
+    <div class="section-row">
+      <h2 class="section-title">Exercise Records</h2>
     </div>
-    <div class="nutrition-body" id="nutritionBody" hidden>
-      <div id="noProfileMsg" class="no-profile">
-        <p>Add your weight, height and age to see BMI and macro targets.</p>
-        <button class="btn-tonal" id="setupProfileBtn">Set up profile</button>
+
+    <!-- Single receipt: strength PRs by weekday, then isometric holds -->
+    <div class="receipt-card">
+      <div class="receipt-head">
+        <span class="receipt-title">Strength PRs</span>
+        <span class="receipt-sub" id="receiptSummary"></span>
       </div>
-      <div id="nutritionContent">
-        <div class="bmi-row">
-          <span class="bmi-label">BMI</span>
-          <strong id="bmiValue">--</strong>
-          <span class="bmi-chip" id="bmiCategory"></span>
-        </div>
-        <div class="bmi-gauge">
-          <div class="bmi-gauge-track">
-            <div class="bmi-seg seg-under"></div>
-            <div class="bmi-seg seg-healthy"></div>
-            <div class="bmi-seg seg-over"></div>
-            <div class="bmi-seg seg-obese"></div>
-            <div class="bmi-needle" id="bmiNeedle"></div>
-          </div>
-          <div class="bmi-seg-labels">
-            <span>Under</span><span>Normal</span><span>Over</span><span>Obese</span>
-          </div>
-        </div>
-
-        <div class="preset-row" role="radiogroup" aria-label="Goal">
-          <button class="preset-btn" data-preset="cut">Cut</button>
-          <button class="preset-btn" data-preset="recomp">Recomp</button>
-          <button class="preset-btn active" data-preset="clean">Clean bulk</button>
-          <button class="preset-btn" data-preset="aggressive">Aggressive bulk</button>
-        </div>
-
-        <div class="macro-grid">
-          <div class="macro-cell macro-cell-kcal"><div class="macro-num" id="macroCal">--</div><div class="macro-lbl">kcal</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroProtein">--</div><div class="macro-lbl">Protein</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroCarbs">--</div><div class="macro-lbl">Carbs</div></div>
-          <div class="macro-cell"><div class="macro-num" id="macroFat">--</div><div class="macro-lbl">Fats</div></div>
-        </div>
-
-        <div class="target-mode">
-          <div class="current-weight-badge">
-            <div class="cwb-label">Current weight</div>
-            <div class="cwb-value" id="curWeightDisplay">-- kg</div>
-          </div>
-          <div class="slider-row">
-            <div class="slider-head">
-              <label for="tgtWeightSlider">Target weight</label>
-              <span class="slider-value"><span id="tgtWeightLbl">--</span> kg</span>
-            </div>
-            <div class="slider-wrap">
-              <input type="range" id="tgtWeightSlider" min="40" max="160" step="0.5">
-              <span class="slider-marker" id="curWeightMarker" aria-hidden="true"></span>
-            </div>
-            <div class="slider-foot">
-              <span>40 kg</span>
-              <span class="delta-chip" id="tgtDeltaChip"></span>
-              <span>160 kg</span>
-            </div>
-          </div>
-          <div class="slider-row">
-            <div class="slider-head">
-              <label for="weeksSlider">Timeframe</label>
-              <span class="slider-value"><span id="weeksLbl">8</span> weeks</span>
-            </div>
-            <div class="slider-wrap">
-              <input type="range" id="weeksSlider" min="2" max="52" step="1" value="8">
-            </div>
-          </div>
-          <div id="targetResult" class="target-result">--</div>
-        </div>
+      <div class="receipt-body" id="receiptBody">
+        <div class="records-empty">No records yet</div>
       </div>
     </div>
   </section>
@@ -225,27 +193,31 @@
   <div class="weight-module">
     <div class="adjust-label">Weight</div>
     <div class="weight-readout">
-      <button class="step-btn" data-step-field="weight" data-step="-2.5" aria-label="Decrease weight by 2.5 kg">
+      <button class="step-btn" data-step-field="weight" data-step="-1" aria-label="Decrease weight by 1 kg">
         <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
       </button>
       <label class="weight-input-wrap">
         <input id="weightInput" class="weight-input" type="text" inputmode="decimal" autocomplete="off" aria-label="Weight in kg" value="0">
         <span class="weight-unit">kg</span>
       </label>
-      <button class="step-btn" data-step-field="weight" data-step="2.5" aria-label="Increase weight by 2.5 kg">
+      <button class="step-btn" data-step-field="weight" data-step="1" aria-label="Increase weight by 1 kg">
         <svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
       </button>
     </div>
     <div class="ruler" id="weightTrack" data-field="weight" aria-hidden="true"></div>
     <div class="weight-foot">
       <span class="delta-chip" id="weightDeltaChip"></span>
-      <span class="adjust-hint">Drag the ruler or tap the number</span>
+      <div class="quick-pill-row">
+        <button class="quick-pill" data-step-field="weight" data-step="-2.5">−2.5</button>
+        <span class="adjust-hint">Drag the ruler or tap the number</span>
+        <button class="quick-pill" data-step-field="weight" data-step="2.5">+2.5</button>
+      </div>
     </div>
   </div>
 
   <div class="adjust-row two-up">
     <div class="adjust-block">
-      <div class="adjust-label">Reps</div>
+      <div class="adjust-label" id="adjustRepsLabel">Reps</div>
       <div class="stepper">
         <button class="step-btn small" data-step-field="reps" data-step="-1" aria-label="Fewer reps"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
         <div class="stepper-value" id="repsTrack" data-field="reps"><span id="repsValue">0</span></div>
@@ -293,9 +265,16 @@
   <div class="sheet-title">Edit exercise</div>
   <div class="adjust-label">Name</div>
   <input id="editExName" class="text-input" type="text" placeholder="Name">
+  <div class="adjust-block">
+    <div class="adjust-label">Exercise type</div>
+    <select id="editExType" class="text-input">
+      <option value="reps">Reps-based</option>
+      <option value="time">Timed (e.g. Planks)</option>
+    </select>
+  </div>
   <div class="adjust-row two-up">
     <div class="adjust-block">
-      <div class="adjust-label">Target reps</div>
+      <div class="adjust-label" id="editExRepsLabel">Target reps</div>
       <input id="editExReps" class="text-input" type="number" inputmode="numeric" min="1">
     </div>
     <div class="adjust-block">
@@ -308,65 +287,202 @@
 
 <!-- Profile sheet -->
 <div id="profileBackdrop" class="sheet-backdrop"></div>
-<div id="profileSheet" class="sheet" role="dialog">
+<div id="profileSheet" class="sheet" role="dialog" aria-labelledby="profileSheetTitle">
   <div class="sheet-handle"></div>
-  <div class="sheet-title">Your profile</div>
-  <div class="adjust-block">
-    <div class="adjust-label">Name</div>
-    <input id="pfName" class="text-input" type="text" placeholder="e.g. Kesav">
+  <div class="sheet-title" id="profileSheetTitle">Your profile</div>
+
+  <!-- Read-only summary -->
+  <div class="profile-view" id="profileView">
+    <div class="profile-view-row"><span class="pv-label">Name</span><span class="pv-value" id="pvName">--</span></div>
+    <div class="profile-view-row"><span class="pv-label">Body weight</span><span class="pv-value" id="pvWeight">--</span></div>
+    <div class="profile-view-row"><span class="pv-label">Height</span><span class="pv-value" id="pvHeight">--</span></div>
+    <div class="profile-view-row"><span class="pv-label">Age</span><span class="pv-value" id="pvAge">--</span></div>
+    <div class="profile-view-row"><span class="pv-label">Gender</span><span class="pv-value" id="pvGender">--</span></div>
+    <div class="profile-view-row"><span class="pv-label">Activity level</span><span class="pv-value" id="pvActivity">--</span></div>
   </div>
-  <div class="adjust-row two-up">
+
+  <!-- Editable form -->
+  <div class="profile-edit" id="profileEdit" hidden>
     <div class="adjust-block">
-      <div class="adjust-label">Weight (kg)</div>
-      <input id="pfWeight" class="text-input" type="number" inputmode="decimal">
+      <div class="adjust-label">Name</div>
+      <input id="pfName" class="text-input" type="text" placeholder="e.g. Kesav">
+    </div>
+    <div class="adjust-row two-up">
+      <div class="adjust-block">
+        <div class="adjust-label">Weight (kg)</div>
+        <input id="pfWeight" class="text-input" type="number" inputmode="decimal">
+      </div>
+      <div class="adjust-block">
+        <div class="adjust-label">Height (cm)</div>
+        <input id="pfHeight" class="text-input" type="number" inputmode="numeric">
+      </div>
+    </div>
+    <div class="adjust-row two-up">
+      <div class="adjust-block">
+        <div class="adjust-label">Age</div>
+        <input id="pfAge" class="text-input" type="number" inputmode="numeric">
+      </div>
+      <div class="adjust-block">
+        <div class="adjust-label">Gender</div>
+        <select id="pfGender" class="text-input">
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
     </div>
     <div class="adjust-block">
-      <div class="adjust-label">Height (cm)</div>
-      <input id="pfHeight" class="text-input" type="number" inputmode="numeric">
-    </div>
-  </div>
-  <div class="adjust-row two-up">
-    <div class="adjust-block">
-      <div class="adjust-label">Age</div>
-      <input id="pfAge" class="text-input" type="number" inputmode="numeric">
-    </div>
-    <div class="adjust-block">
-      <div class="adjust-label">Gender</div>
-      <select id="pfGender" class="text-input">
-        <option value="male">Male</option>
-        <option value="female">Female</option>
-        <option value="other">Other</option>
+      <div class="adjust-label">Activity level</div>
+      <select id="pfActivity" class="text-input">
+        <option value="1.2">Sedentary (little/no exercise)</option>
+        <option value="1.375">Light (1-3 days/week)</option>
+        <option value="1.55" selected>Moderate (3-5 days/week)</option>
+        <option value="1.725">Active (6-7 days/week)</option>
+        <option value="1.9">Very active (physical job + training)</option>
       </select>
     </div>
   </div>
-  <div class="adjust-block">
-    <div class="adjust-label">Activity level</div>
-    <select id="pfActivity" class="text-input">
-      <option value="1.2">Sedentary (little/no exercise)</option>
-      <option value="1.375">Light (1-3 days/week)</option>
-      <option value="1.55" selected>Moderate (3-5 days/week)</option>
-      <option value="1.725">Active (6-7 days/week)</option>
-      <option value="1.9">Very active (physical job + training)</option>
-    </select>
+
+  <!-- View-mode action -->
+  <div class="profile-actions" id="profileViewActions">
+    <button class="btn-tonal btn-log" id="profileEditBtn">Edit profile</button>
   </div>
-  <button class="btn-filled btn-log" id="profileSaveBtn">Save profile</button>
-  <div class="backup-row">
-    <button class="btn-tonal backup-btn" id="exportDataBtn">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Export data
-    </button>
-    <button class="btn-tonal backup-btn" id="importDataBtn">
-      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      Import data
-    </button>
+
+  <!-- Edit-mode actions -->
+  <div class="profile-actions profile-actions-edit" id="profileEditActions" hidden>
+    <button class="btn-text" id="profileCancelBtn">Cancel</button>
+    <button class="btn-filled" id="profileSaveBtn">Save profile</button>
   </div>
+
   <input type="file" id="importFileInput" accept=".json" hidden>
+</div>
+
+<!-- About sheet -->
+<div id="aboutBackdrop" class="sheet-backdrop"></div>
+<div id="aboutSheet" class="sheet small-sheet" role="dialog" aria-labelledby="aboutSheetTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="aboutSheetTitle">About PRX</div>
+  <p class="about-text">PRX is an open-source, local-first hobby project built for personal workout tracking. It doesn't track, sell, or collect your health data&mdash;everything stays on your device. Use it to track your gains, hit your PRs, and enjoy the process, but don't take it too seriously as professional fitness software! Stay safe and lift smart.</p>
+  <a class="about-repo-link" href="https://github.com/kesav-gh/trynabeproductive/tree/main/prxapp" target="_blank" rel="noopener noreferrer">
+    <svg viewBox="0 0 24 24" width="18" height="18"><path d="m16 18 6-6-6-6"/><path d="M8 6l-6 6 6 6"/></svg>
+    View Source Code on GitHub
+  </a>
+  <button class="btn-filled btn-log" id="aboutCloseBtn">Got it</button>
+</div>
+
+<!-- Macro calculator sheet (moved out of the Plans tab) -->
+<div id="macroBackdrop" class="sheet-backdrop"></div>
+<div id="macroSheet" class="sheet" role="dialog" aria-labelledby="macroSheetTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="macroSheetTitle">MacroCalc</div>
+  <section class="nutrition-card">
+    <div class="nutrition-body" id="nutritionBody">
+      <div id="noProfileMsg" class="no-profile">
+        <p>Add your weight, height and age to see BMI and macro targets.</p>
+        <button class="btn-tonal" id="setupProfileBtn">Set up profile</button>
+      </div>
+      <div id="nutritionContent">
+        <div class="bmi-row">
+          <span class="bmi-label">BMI</span>
+          <strong id="bmiValue">--</strong>
+          <span class="bmi-chip" id="bmiCategory"></span>
+        </div>
+        <div class="bmi-gauge">
+          <div class="bmi-gauge-track">
+            <div class="bmi-seg seg-under"></div>
+            <div class="bmi-seg seg-healthy"></div>
+            <div class="bmi-seg seg-over"></div>
+            <div class="bmi-seg seg-obese"></div>
+            <div class="bmi-needle" id="bmiNeedle"></div>
+          </div>
+          <div class="bmi-seg-labels">
+            <span>Under</span><span>Normal</span><span>Over</span><span>Obese</span>
+          </div>
+        </div>
+
+        <div class="target-mode">
+          <div class="current-weight-badge">
+            <div class="cwb-label">Current weight</div>
+            <div class="cwb-value" id="curWeightDisplay">-- kg</div>
+          </div>
+          <div class="slider-row">
+            <div class="slider-head">
+              <label for="tgtWeightSlider">Target weight</label>
+              <span class="slider-value"><span id="tgtWeightLbl">--</span> kg</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="tgtWeightSlider" min="40" max="160" step="0.5">
+              <span class="slider-marker" id="curWeightMarker" aria-hidden="true"></span>
+            </div>
+            <div class="slider-foot">
+              <span>40 kg</span>
+              <span class="delta-chip" id="tgtDeltaChip"></span>
+              <span>160 kg</span>
+            </div>
+          </div>
+          <div class="slider-row">
+            <div class="slider-head">
+              <label for="weeksSlider">Timeframe</label>
+              <span class="slider-value"><span id="weeksLbl">8</span> weeks</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="weeksSlider" min="2" max="52" step="1" value="8">
+            </div>
+          </div>
+          <div id="targetResult" class="target-result">--</div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- Swap split sheet -->
+<div id="swapBackdrop" class="sheet-backdrop"></div>
+<div id="swapSheet" class="sheet" role="dialog" aria-labelledby="swapSheetTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="swapSheetTitle">Swap today's split</div>
+  <div id="swapDayList" class="swap-exercise-list"></div>
+</div>
+
+<!-- Timer sheet -->
+<div id="timerBackdrop" class="sheet-backdrop"></div>
+<div id="timerSheet" class="sheet small-sheet" role="dialog" aria-labelledby="timerSheetTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="timerSheetTitle">Stopwatch</div>
+  <div class="timer-display" id="timerDisplay">00:00</div>
+  <div class="timer-controls">
+    <button class="btn-tonal" id="timerResetBtn">Reset</button>
+    <button class="btn-filled" id="timerStartBtn">Start</button>
+  </div>
+  <div class="timer-save" id="timerSaveBar" hidden>
+    <input id="timerLabelInput" class="text-input" type="text" maxlength="40" autocomplete="off" enterkeyhint="done" placeholder="Label this hold (e.g., Planks, Dead Hangs)...">
+    <button class="btn-filled btn-log" id="timerSaveBtn">Save Time</button>
+  </div>
+</div>
+
+<!-- Backup dialog sheet -->
+<div id="backupBackdrop" class="sheet-backdrop"></div>
+<div id="backupSheet" class="sheet small-sheet" role="dialog" aria-labelledby="backupSheetTitle">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title" id="backupSheetTitle">Export or Import Data</div>
+  <p class="about-text">Backup your workout history or restore from a previous export.</p>
+  <div class="backup-dialog-btns">
+    <button class="btn-filled" id="drawerExportBtn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export Backup
+    </button>
+    <button class="btn-tonal" id="drawerImportBtn">
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Import Backup
+    </button>
+  </div>
+  <button class="btn-text btn-cancel" id="backupCloseBtn">Cancel</button>
 </div>
 
 <!-- MD3 snackbar -->
 <div id="snackbar" class="snackbar" role="status" aria-live="polite"></div>
 
 <script src="js/db.js"></script>
-<script src="js/app.js?v=4"></script>
+<script src="js/app.js?v=6"></script>
 </body>
 </html>

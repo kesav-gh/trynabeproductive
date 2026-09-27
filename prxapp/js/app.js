@@ -11,6 +11,19 @@ function vibrate(pattern){ if (navigator.vibrate) navigator.vibrate(pattern); }
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+function fmtDuration(secs) {
+  const s = Math.round(secs);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return m > 0 ? `${m}m ${pad2(r)}s` : `${r}s`;
+}
+function parseDuration(str) {
+  const mMatch = str.match(/(\d+)\s*m/);
+  const sMatch = str.match(/(\d+)\s*s/);
+  const m = mMatch ? parseInt(mMatch[1]) : 0;
+  const s = sMatch ? parseInt(sMatch[1]) : 0;
+  return m * 60 + s;
+}
 
 /* One icon language for the whole app (stroke icons, styled by CSS) */
 const ICONS = {
@@ -25,7 +38,9 @@ const ICONS = {
   moon:   '<svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
   trash:  '<svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>',
   pencil: '<svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
-  grip:   '<svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
+  grip:   '<svg viewBox="0 0 24 24"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>',
+  swap:   '<svg viewBox="0 0 24 24"><path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/></svg>',
+  revert: '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>'
 };
 
 /* MD3 snackbar */
@@ -52,7 +67,7 @@ function switchView(name) {
   document.getElementById(`view-${name}`).classList.add('active');
   document.querySelector(`.dock-btn[data-view="${name}"]`).classList.add('active');
   if (name === 'today') renderToday();
-  if (name === 'plans') { collapseAllPlans(); renderPlans(); renderPlanSwitcherCard(); renderNutritionCard().catch(()=>{}); }
+  if (name === 'plans') { collapseAllPlans(); renderPlans(); renderPlanSwitcherCard(); refreshRecords(); }
   if (name === 'streak') { resetCalendarToCurrentMonth(); renderStreak(); renderGreeting(); }
 }
 
@@ -76,6 +91,13 @@ async function renderToday() {
   const setStatus = (chipHtml) => {
     statusBar.innerHTML = `<span class="today-day">${dayName}</span>${chipHtml || ''}`;
   };
+  /* Split pill + swap button; a "Revert Split" chip appears when today is overridden */
+  const splitStatus = (label, rest, swapped) => `
+    <div class="today-chip-row">
+      <span class="today-chip${rest ? ' rest' : ''}">${label}</span>
+      <button class="icon-btn split-swap-btn" aria-label="Swap today's split">${ICONS.swap}</button>
+      ${swapped ? `<button class="revert-split-chip" aria-label="Revert to the default split">${ICONS.revert} Revert Split</button>` : ''}
+    </div>`;
   const showEmpty = (title, sub) => {
     list.replaceChildren();
     if (emptyTitle) emptyTitle.textContent = title;
@@ -93,13 +115,16 @@ async function renderToday() {
 
   const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
   if (rid !== _todayRenderId) return;
-  const day = planDays.find(pd => pd.weekday === now.getDay());
+  const defaultDay = planDays.find(pd => pd.weekday === now.getDay());
+  const swapDay = resolveDaySwap(planDays);          // daily override, if valid
+  const day = swapDay || defaultDay;
+
   if (!day) {
-    setStatus(`<span class="today-chip rest">${ICONS.moon} Rest day</span>`);
+    setStatus(splitStatus(`${ICONS.moon} Rest day`, true, false));
     showEmpty('Rest day', `${plan.name} has nothing on ${dayName}s. Recover, or add a split in Plans.`);
     return;
   }
-  setStatus(`<span class="today-chip">${escapeHtml(day.label || 'Session')}</span>`);
+  setStatus(splitStatus(escapeHtml(day.label || 'Session'), false, !!swapDay));
 
   let exercises = await DB.getAllByIndex('exercises', 'planDayId', day.id);
   exercises = exercises.sort((a,b) => (a.order||0) - (b.order||0));
@@ -112,26 +137,72 @@ async function renderToday() {
   const today = todayStr();
   const cards = [];
   for (const ex of exercises) {
+    const displayName = ex.name;
+    const displayReps = ex.targetReps;
+    const displaySets = ex.targetSets;
+    const displayType = ex.type || 'reps';
     const logs = await DB.getAllByIndex('logEntries', 'exerciseId', ex.id);
     const last = logs.sort((a,b) => b.ts - a.ts)[0];
     const doneToday = logs.some(l => l.date === today);
-    const initial = escapeHtml((ex.name.trim()[0] || '?').toUpperCase());
+    const initial = escapeHtml((displayName.trim()[0] || '?').toUpperCase());
+
+    /* Ghost cue: previous session metrics */
+    let ghostHtml = '';
+    if (last && !doneToday) {
+      if (displayType === 'time') {
+        const secs = last.reps || 0;
+        ghostHtml = `<div class="exercise-ghost">Prev: ${fmtDuration(secs)}${last.weight > 0 ? ' @ ' + last.weight + 'kg' : ''}</div>`;
+      } else {
+        ghostHtml = `<div class="exercise-ghost">Prev: ${last.weight > 0 ? last.weight + 'kg' : 'BW'} × ${last.reps}</div>`;
+      }
+    }
+
+    /* Overload detection: all target sets logged today AND reps >= target */
+    let overload = false;
+    if (!doneToday && last) {
+      const todayLogs = logs.filter(l => l.date === today);
+      if (displayType === 'time') {
+        overload = todayLogs.length >= displaySets && (last.reps || 0) >= (displayReps || 0);
+      } else {
+        overload = todayLogs.length >= displaySets && last.reps >= displayReps;
+      }
+    }
+
     const card = document.createElement('div');
     card.className = 'exercise-card' + (doneToday ? ' logged-today' : '');
     card.setAttribute('role', 'button');
     card.tabIndex = 0;
+    card.dataset.exId = ex.id;
+
+    const targetLabel = displayType === 'time'
+      ? `${displaySets} × ${fmtDuration(displayReps)}`
+      : `${displaySets} × ${displayReps}`;
+
+    const lastLabel = displayType === 'time'
+      ? (!last ? '--' : fmtDuration(last.reps || 0))
+      : (!last ? '--' : (last.weight > 0 ? last.weight : 'BW'));
+    const lastSub = displayType === 'time'
+      ? (!last ? 'no log' : (last.weight > 0 ? 'kg hold' : 'bodyweight'))
+      : (!last ? 'no log' : (last.weight > 0 ? 'kg last' : 'bodyweight'));
+
     card.innerHTML = `
       <div class="exercise-avatar">${doneToday ? ICONS.check : initial}</div>
       <div class="exercise-main">
-        <div class="exercise-name">${escapeHtml(ex.name)}</div>
-        <div class="exercise-meta">${ex.targetSets} × ${ex.targetReps} target</div>
+        <div class="exercise-name">${escapeHtml(displayName)}</div>
+        <div class="exercise-meta">${targetLabel} target</div>
+        ${ghostHtml}
       </div>
-      <div class="exercise-lastlog${last ? '' : ' muted'}">
-        <span class="ll-num">${!last ? '--' : (last.weight > 0 ? last.weight : 'BW')}</span>
-        <span class="ll-lbl">${!last ? 'no log' : (last.weight > 0 ? 'kg last' : 'bodyweight')}</span>
+      <div class="exercise-actions">
+        <div class="exercise-lastlog${last ? '' : ' muted'}">
+          <span class="ll-num">${lastLabel}</span>
+          <span class="ll-lbl">${lastSub}</span>
+        </div>
       </div>`;
-    card.addEventListener('click', () => openLogSheet(ex, last));
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogSheet(ex, last); } });
+    card.addEventListener('click', () => {
+      openLogSheet(ex, last, { displayName, displayReps, displaySets, displayType });
+    });
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogSheet(ex, last, { displayName, displayReps, displaySets, displayType }); } });
+
     cards.push(card);
   }
   if (rid !== _todayRenderId) return;
@@ -142,8 +213,9 @@ async function renderToday() {
 /* ---------- Log sheet ---------- */
 let currentExercise = null;
 let currentLastLog = null;
+let currentDisplay = null;
 let adjustState = { weight: 0, reps: 0, sets: 0 };
-const ADJUST_LIMITS = { weight: [0, 500], reps: [1, 100], sets: [1, 20] };
+const ADJUST_LIMITS = { weight: [0, 500], reps: [1, 7200], sets: [1, 20] };
 const WEIGHT_STEP = 2.5;     // kg per ruler tick and per −/+ tap
 const WEIGHT_TICK_PX = 24;   // must match the 24px tick spacing in .ruler (css/style.css)
 
@@ -153,13 +225,34 @@ function clampField(field, v) {
 }
 function fmtKg(n) { return String(Math.round(n * 100) / 100); }
 
-function openLogSheet(ex, last) {
+function openLogSheet(ex, last, displayOverride) {
   currentExercise = ex;
   currentLastLog = last || null;
+  currentDisplay = displayOverride || null;
+  const isTime = (displayOverride ? displayOverride.displayType : (ex.type || 'reps')) === 'time';
   adjustState.weight = last ? last.weight : 0;
-  adjustState.reps = clampField('reps', last ? last.reps : ex.targetReps);
-  adjustState.sets = clampField('sets', last ? last.sets : ex.targetSets);
-  document.getElementById('logSheetTitle').textContent = ex.name;
+  adjustState.reps = isTime
+    ? clampField('reps', last ? last.reps : (displayOverride ? displayOverride.displayReps : ex.targetReps))
+    : clampField('reps', last ? last.reps : (displayOverride ? displayOverride.displayReps : ex.targetReps));
+  adjustState.sets = clampField('sets', last ? last.sets : (displayOverride ? displayOverride.displaySets : ex.targetSets));
+
+  const exName = displayOverride ? displayOverride.displayName : ex.name;
+  document.getElementById('logSheetTitle').textContent = exName;
+
+  const repsLabel = document.getElementById('adjustRepsLabel');
+  const repsValue = document.getElementById('repsValue');
+  const weightModule = document.querySelector('.weight-module');
+
+  if (isTime) {
+    if (repsLabel) repsLabel.textContent = 'Duration';
+    repsValue.textContent = fmtDuration(adjustState.reps);
+    if (weightModule) weightModule.style.display = 'none';
+  } else {
+    if (repsLabel) repsLabel.textContent = 'Reps';
+    repsValue.textContent = adjustState.reps;
+    if (weightModule) weightModule.style.display = '';
+  }
+
   updateAdjustDisplay();
   showSheet('logSheet');
 }
@@ -168,7 +261,13 @@ function updateAdjustDisplay() {
   const w = adjustState.weight;
   const input = document.getElementById('weightInput');
   if (document.activeElement !== input) input.value = fmtKg(w);
-  document.getElementById('repsValue').textContent = adjustState.reps;
+  const isTime = currentDisplay && currentDisplay.displayType === 'time';
+  const repsValue = document.getElementById('repsValue');
+  if (isTime) {
+    repsValue.textContent = fmtDuration(adjustState.reps);
+  } else {
+    repsValue.textContent = adjustState.reps;
+  }
   document.getElementById('setsValue').textContent = adjustState.sets;
 
   /* Ruler indicator: ticks slide with the value (drag right = heavier) */
@@ -237,11 +336,13 @@ attachSwipe('setsTrack', 'sets', 20, 1);
 document.querySelectorAll('.step-btn').forEach(btn => {
   const field = btn.dataset.stepField;
   const step = Number(btn.dataset.step);
+  const isWeight = field === 'weight';
   let holdTimer = null, repeatTimer = null;
-  const bump = () => {
+  const bump = (overrideStep) => {
     const wi = document.getElementById('weightInput');
     if (document.activeElement === wi) wi.blur();
-    const next = clampField(field, adjustState[field] + step);
+    const s = overrideStep !== undefined ? overrideStep : step;
+    const next = clampField(field, adjustState[field] + s);
     if (next === adjustState[field]) return;
     adjustState[field] = next;
     vibrate(8);
@@ -251,10 +352,29 @@ document.querySelectorAll('.step-btn').forEach(btn => {
   btn.addEventListener('pointerdown', () => {
     bump();
     stop();
-    holdTimer = setTimeout(() => { repeatTimer = setInterval(bump, 90); }, 400);
+    if (isWeight) {
+      holdTimer = setTimeout(() => { repeatTimer = setInterval(() => bump(step * 2.5), 90); }, 300);
+    } else {
+      holdTimer = setTimeout(() => { repeatTimer = setInterval(bump, 90); }, 400);
+    }
   });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, stop));
   btn.addEventListener('click', e => { if (e.detail === 0) bump(); }); // keyboard activation
+});
+
+/* Quick-pill buttons (±2.5 weight jumps) */
+document.querySelectorAll('.quick-pill').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const field = btn.dataset.stepField;
+    const step = Number(btn.dataset.step);
+    const wi = document.getElementById('weightInput');
+    if (document.activeElement === wi) wi.blur();
+    const next = clampField(field, adjustState[field] + step);
+    if (next === adjustState[field]) return;
+    adjustState[field] = next;
+    vibrate(12);
+    updateAdjustDisplay();
+  });
 });
 
 /* Typed weight */
@@ -277,14 +397,18 @@ document.querySelectorAll('.step-btn').forEach(btn => {
   input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); });
 })();
 
-async function checkIsPR(exerciseId, weight, reps) {
+async function checkIsPR(exerciseId, weight, reps, isTime) {
   const logs = await DB.getAllByIndex('logEntries', 'exerciseId', exerciseId);
-  if (logs.length === 0) return true;                 // first ever log counts as the baseline PR
+  if (logs.length === 0) return true;
+  if (isTime) {
+    const bestDuration = Math.max(0, ...logs.map(l => l.reps));
+    return reps > bestDuration;
+  }
   const maxWeight = Math.max(...logs.map(l => l.weight));
   if (weight > maxWeight) return true;
   if (weight < maxWeight) return false;
   const bestRepsAtMax = Math.max(0, ...logs.filter(l => l.weight === maxWeight).map(l => l.reps));
-  return reps > bestRepsAtMax;                        // strictly more reps; a tie is not a PR
+  return reps > bestRepsAtMax;
 }
 
 let _logInFlight = false;
@@ -293,34 +417,45 @@ document.getElementById('confirmLogBtn').addEventListener('click', async () => {
   const wi = document.getElementById('weightInput');
   if (document.activeElement === wi) wi.blur();   // commits a typed value
   if (adjustState.reps < 1 || adjustState.sets < 1) {
-    showSnackbar('Reps and sets need to be at least 1.');
+    showSnackbar('Duration/reps and sets need to be at least 1.');
     return;
   }
   _logInFlight = true;
   try {
     const ex = currentExercise;
-    const isPR = await checkIsPR(ex.id, adjustState.weight, adjustState.reps);
+    const isTime = currentDisplay && currentDisplay.displayType === 'time';
+    const isPR = await checkIsPR(ex.id, adjustState.weight, adjustState.reps, isTime);
     await DB.add('logEntries', {
       exerciseId: ex.id, date: todayStr(),
       reps: adjustState.reps, sets: adjustState.sets, weight: adjustState.weight,
-      isPR, ts: Date.now()
+      isPR, ts: Date.now(), type: isTime ? 'time' : 'reps'
     });
     vibrate(isPR ? [30,50,30] : [30]);
     hideSheet('logSheet');
-    showSnackbar(
-      isPR ? `New PR on ${ex.name}: ${fmtKg(adjustState.weight)} kg × ${adjustState.reps}`
-           : `Logged ${ex.name}`,
-      isPR ? 'pr' : ''
-    );
+    const exName = currentDisplay ? currentDisplay.displayName : ex.name;
+    if (isTime) {
+      showSnackbar(
+        isPR ? `New PR on ${exName}: ${fmtDuration(adjustState.reps)}`
+             : `Logged ${exName}`,
+        isPR ? 'pr' : ''
+      );
+    } else {
+      showSnackbar(
+        isPR ? `New PR on ${exName}: ${fmtKg(adjustState.weight)} kg × ${adjustState.reps}`
+             : `Logged ${exName}`,
+        isPR ? 'pr' : ''
+      );
+    }
     renderToday();
     updateStreakPill();
+    refreshRecords();
   } finally {
     _logInFlight = false;
   }
 });
 
 /* ---------- Sheets ---------- */
-const SHEET_BACKDROPS = { logSheet:'logSheetBackdrop', promptSheet:'promptBackdrop', confirmSheet:'confirmBackdrop', editExSheet:'editExBackdrop', profileSheet:'profileBackdrop' };
+const SHEET_BACKDROPS = { logSheet:'logSheetBackdrop', promptSheet:'promptBackdrop', confirmSheet:'confirmBackdrop', editExSheet:'editExBackdrop', profileSheet:'profileBackdrop', aboutSheet:'aboutBackdrop', swapSheet:'swapBackdrop', timerSheet:'timerBackdrop', backupSheet:'backupBackdrop', macroSheet:'macroBackdrop' };
 function showSheet(id) {
   document.getElementById(id).classList.add('show');
   document.getElementById(SHEET_BACKDROPS[id]).classList.add('show');
@@ -380,24 +515,69 @@ const PROFILE_FIELDS = [
   ['pfHeight', 100, 250],
   ['pfAge', 13, 100]
 ];
+const GENDER_LABELS = { male: 'Male', female: 'Female', other: 'Other' };
+
 async function getProfile() {
   return await DB.get('profileStore', 1);
 }
-async function openProfileSheet() {
-  const p = await getProfile();
-  if (p) {
-    document.getElementById('pfName').value = p.name || '';
-    document.getElementById('pfWeight').value = p.weight;
-    document.getElementById('pfHeight').value = p.height;
-    document.getElementById('pfAge').value = p.age;
-    document.getElementById('pfGender').value = p.gender;
-    document.getElementById('pfActivity').value = p.activityLevel;
-  }
-  PROFILE_FIELDS.forEach(([id]) => document.getElementById(id).classList.remove('invalid'));
-  showSheet('profileSheet');
+
+function setProfileMode(edit) {
+  document.getElementById('profileView').hidden = edit;
+  document.getElementById('profileEdit').hidden = !edit;
+  document.getElementById('profileViewActions').hidden = edit;
+  document.getElementById('profileEditActions').hidden = !edit;
+  document.getElementById('profileSheetTitle').textContent = edit ? 'Edit profile' : 'Your profile';
 }
-document.getElementById('profileBtn').addEventListener('click', openProfileSheet);
-document.getElementById('setupProfileBtn').addEventListener('click', openProfileSheet);
+
+function fillProfileView(p) {
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const empty = !val;
+    el.textContent = empty ? '--' : val;
+    el.classList.toggle('empty', empty);
+  };
+  const activitySel = document.getElementById('pfActivity');
+  const opt = activitySel && activitySel.selectedIndex >= 0 ? activitySel.options[activitySel.selectedIndex] : null;
+  set('pvName', p && p.name ? p.name : '');
+  set('pvWeight', p && p.weight ? `${p.weight} kg` : '');
+  set('pvHeight', p && p.height ? `${p.height} cm` : '');
+  set('pvAge', p && p.age ? String(p.age) : '');
+  set('pvGender', p && p.gender ? (GENDER_LABELS[p.gender] || p.gender) : '');
+  set('pvActivity', p && p.activityLevel ? (opt ? opt.text : String(p.activityLevel)) : '');
+}
+
+function fillProfileInputs(p) {
+  document.getElementById('pfName').value = p ? (p.name || '') : '';
+  document.getElementById('pfWeight').value = p ? p.weight : '';
+  document.getElementById('pfHeight').value = p ? p.height : '';
+  document.getElementById('pfAge').value = p ? p.age : '';
+  document.getElementById('pfGender').value = p ? p.gender : 'male';
+  document.getElementById('pfActivity').value = p ? p.activityLevel : '1.55';
+  PROFILE_FIELDS.forEach(([id]) => document.getElementById(id).classList.remove('invalid'));
+}
+
+async function openProfileSheet(startInEdit) {
+  const p = await getProfile();
+  fillProfileInputs(p);
+  fillProfileView(p);
+  const edit = typeof startInEdit === 'boolean' ? startInEdit : !p;
+  setProfileMode(edit);
+  showSheet('profileSheet');
+  if (edit) setTimeout(() => document.getElementById('pfName').focus(), 250);
+}
+
+document.getElementById('setupProfileBtn').addEventListener('click', () => openProfileSheet(true));
+document.getElementById('profileEditBtn').addEventListener('click', () => {
+  setProfileMode(true);
+  document.getElementById('pfName').focus();
+});
+document.getElementById('profileCancelBtn').addEventListener('click', async () => {
+  const p = await getProfile();
+  fillProfileInputs(p);
+  fillProfileView(p);
+  setProfileMode(false);
+});
 document.getElementById('profileSaveBtn').addEventListener('click', async () => {
   let ok = true;
   for (const [id, lo, hi] of PROFILE_FIELDS) {
@@ -423,9 +603,11 @@ document.getElementById('profileSaveBtn').addEventListener('click', async () => 
     activityLevel: Number(document.getElementById('pfActivity').value)
   };
   await DB.put('profileStore', profile);
-  hideSheet('profileSheet');
+  fillProfileInputs(profile);
+  fillProfileView(profile);
+  setProfileMode(false);
   showSnackbar('Profile saved');
-  renderNutritionCard();
+  renderNutritionCard().catch(() => {});
   renderGreeting(profile);
 });
 
@@ -444,20 +626,6 @@ async function renderGreeting(profile) {
 }
 
 /* ================= MACROCALC (Nutrition Blueprint) ================= */
-function toggleNutrition() {
-  const body = document.getElementById('nutritionBody');
-  const chevron = document.getElementById('nutritionChevron');
-  const head = document.getElementById('nutritionToggle');
-  body.hidden = !body.hidden;
-  chevron.classList.toggle('expanded', !body.hidden);
-  head.setAttribute('aria-expanded', String(!body.hidden));
-  if (!body.hidden) renderNutritionCard().catch(() => {});
-}
-document.getElementById('nutritionToggle').addEventListener('click', toggleNutrition);
-document.getElementById('nutritionToggle').addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleNutrition(); }
-});
-
 function calcBMR(profile) {
   const { weight, height, age, gender } = profile;
   const male = 10*weight + 6.25*height - 5*age + 5;
@@ -466,50 +634,6 @@ function calcBMR(profile) {
   if (gender === 'female') return female;
   return (male + female) / 2;
 }
-
-const PRESET_CONFIG = {
-  aggressive: { pct: 0.20, proteinPerKg: 1.8, label: 'Aggressive Bulk' },
-  clean:      { pct: 0.10, proteinPerKg: 1.8, label: 'Clean Bulk' },
-  recomp:     { pct: 0.00, proteinPerKg: 2.0, label: 'Recomp' },
-  cut:        { pct: -0.20, proteinPerKg: 2.2, label: 'Cut' }
-};
-
-let activePreset = 'clean';
-
-function computeMacros(profile, presetKey) {
-  const bmr = calcBMR(profile);
-  const tdee = bmr * profile.activityLevel;
-  const cfg = PRESET_CONFIG[presetKey];
-  const calories = Math.round(tdee * (1 + cfg.pct));
-  const proteinG = Math.round(profile.weight * cfg.proteinPerKg);
-  const fatG = Math.round((calories * 0.25) / 9);
-  const carbsG = Math.max(0, Math.round((calories - proteinG*4 - fatG*9) / 4));
-  return { calories, proteinG, fatG, carbsG, tdee };
-}
-
-function renderMacrosForPreset(profile, presetKey) {
-  const m = computeMacros(profile, presetKey);
-  const cal = document.getElementById('macroCal');
-  const pro = document.getElementById('macroProtein');
-  const carb = document.getElementById('macroCarbs');
-  const fat = document.getElementById('macroFat');
-  if (cal) cal.textContent = m.calories.toLocaleString();
-  if (pro) pro.textContent = m.proteinG + 'g';
-  if (carb) carb.textContent = m.carbsG + 'g';
-  if (fat) fat.textContent = m.fatG + 'g';
-}
-
-/* Preset button handlers — attached once, not on every render */
-document.querySelectorAll('.preset-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    activePreset = btn.dataset.preset;
-    getProfile().then(profile => {
-      if (profile) renderMacrosForPreset(profile, activePreset);
-    });
-  });
-});
 
 /* BMI bands. The gauge draws 4 EQUAL segments, so the needle has to be
    mapped per band — a single linear 15→40 mapping puts a BMI of 22
@@ -540,14 +664,6 @@ async function renderNutritionCard() {
   noMsg.hidden = true; content.hidden = false;
 
   const bmi = profile.weight / Math.pow(profile.height/100, 2);
-  const m = computeMacros(profile, activePreset);
-  const nutritionHead = document.getElementById('nutritionToggle');
-  if (nutritionHead) {
-    const summarySpan = nutritionHead.querySelector('.nutrition-summary');
-    if (summarySpan) {
-      summarySpan.textContent = `${m.calories.toLocaleString()} kcal a day, BMI ${bmi.toFixed(1)}`;
-    }
-  }
 
   const bmiValueEl = document.getElementById('bmiValue');
   const bmiNeedleEl = document.getElementById('bmiNeedle');
@@ -565,12 +681,6 @@ async function renderNutritionCard() {
     if (catEl) { catEl.textContent = cat.label; catEl.className = `bmi-chip ${cat.key}`; }
     if (bmiNeedleEl) bmiNeedleEl.style.left = `${bmiToGaugePct(bmi)}%`;
   }
-
-  renderMacrosForPreset(profile, activePreset);
-
-  document.querySelectorAll('.preset-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.preset === activePreset);
-  });
 
   if (curWeightEl) curWeightEl.textContent = profile.weight + ' kg';
 
@@ -627,6 +737,139 @@ async function renderNutritionCard() {
   tgtSlider.oninput = updateTarget;
   weeksSlider.oninput = updateTarget;
   updateTarget();
+}
+
+/* ================= EXERCISE RECORDS HUB ================= */
+function bestLogFrom(logs, isTime) {
+  if (!logs || logs.length === 0) return null;
+  return logs.reduce((best, l) => {
+    if (isTime) {
+      if (l.reps !== best.reps) return l.reps > best.reps ? l : best;
+      return (l.isPR && !best.isPR) ? l : best;
+    }
+    if (l.weight !== best.weight) return l.weight > best.weight ? l : best;
+    if (l.reps !== best.reps) return l.reps > best.reps ? l : best;
+    return (l.isPR && !best.isPR) ? l : best;
+  });
+}
+
+function formatRecordValue(log, isTime) {
+  if (isTime) return fmtDuration(log.reps || 0);
+  if (log.weight > 0) return `${fmtKg(log.weight)} kg × ${log.reps} reps`;
+  return `BW × ${log.reps} reps`;
+}
+
+/* One combined receipt: strength PRs grouped by weekday, then a divider
+   and the isometric holds section. Built off-DOM into a fragment and
+   committed in one pass, guarded by a render id so overlapping calls
+   (view switch + plan change + stopwatch save) never interleave. */
+let _recordsRenderId = 0;
+
+function appendReceiptRow(parent, name, value, valueClass) {
+  const row = document.createElement('div');
+  row.className = 'receipt-row';
+  row.innerHTML = `
+    <span class="receipt-name">${escapeHtml(name)}</span>
+    <span class="receipt-dots"></span>
+    <span class="${valueClass || 'receipt-value'}">${escapeHtml(value)}</span>`;
+  parent.appendChild(row);
+}
+
+function appendRecordsEmpty(parent, message) {
+  const el = document.createElement('div');
+  el.className = 'records-empty';
+  el.textContent = message;
+  parent.appendChild(el);
+}
+
+async function renderExerciseRecords() {
+  const rid = ++_recordsRenderId;
+  const body = document.getElementById('receiptBody');
+  const summary = document.getElementById('receiptSummary');
+  if (!body) return;
+
+  const frag = document.createDocumentFragment();
+  let summaryText = '';
+
+  /* --- Section 1: strength PRs, grouped weekday by weekday --- */
+  const plan = await getActivePlan();
+  if (rid !== _recordsRenderId) return;
+
+  if (!plan) {
+    appendRecordsEmpty(frag, 'No active plan yet. Set one in Plans to track records by day.');
+  } else {
+    const planDays = (await DB.getAllByIndex('planDays', 'planId', plan.id))
+      .filter(pd => pd.weekday >= 0 && pd.weekday <= 6)
+      .sort((a, b) => a.weekday - b.weekday);
+
+    let total = 0, recorded = 0;
+    for (const pd of planDays) {
+      const exs = (await DB.getAllByIndex('exercises', 'planDayId', pd.id))
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      if (exs.length === 0) continue;
+      if (rid !== _recordsRenderId) return;
+
+      const group = document.createElement('div');
+      group.className = 'receipt-group';
+      group.textContent = WEEKDAY_NAMES[pd.weekday];
+      frag.appendChild(group);
+
+      for (const ex of exs) {
+        total++;
+        const isTime = ex.type === 'time';
+        const best = bestLogFrom(await DB.getAllByIndex('logEntries', 'exerciseId', ex.id), isTime);
+        if (best) recorded++;
+        appendReceiptRow(frag, ex.name, best ? formatRecordValue(best, isTime) : '--');
+      }
+      if (rid !== _recordsRenderId) return;
+    }
+
+    if (total === 0) appendRecordsEmpty(frag, 'No exercises in your active plan yet.');
+    else summaryText = `${recorded} of ${total} records`;
+  }
+
+  /* --- Divider + Section 2: isometric holds from the stopwatch --- */
+  let logs = [];
+  try { logs = await DB.getAll('stopwatch_logs'); } catch { logs = []; }
+  if (rid !== _recordsRenderId) return;
+
+  const divider = document.createElement('div');
+  divider.className = 'receipt-divider';
+  frag.appendChild(divider);
+
+  const sectionTitle = document.createElement('div');
+  sectionTitle.className = 'receipt-section';
+  sectionTitle.textContent = 'Isometric Holds';
+  frag.appendChild(sectionTitle);
+
+  const peaks = new Map();
+  for (const l of logs) {
+    const key = String(l.label || '').trim().toLowerCase();
+    if (!key) continue;
+    const cur = peaks.get(key);
+    if (!cur
+        || (l.duration || 0) > (cur.duration || 0)
+        || ((l.duration || 0) === (cur.duration || 0) && l.isPR && !cur.isPR)) {
+      peaks.set(key, l);
+    }
+  }
+  const holds = [...peaks.values()].sort((a, b) => (b.duration || 0) - (a.duration || 0));
+
+  if (holds.length === 0) {
+    appendRecordsEmpty(frag, 'No timed holds saved yet.');
+  } else {
+    for (const peak of holds) {
+      appendReceiptRow(frag, peak.label, fmtTimer(Math.round(peak.duration || 0)), 'hold-time');
+    }
+  }
+
+  if (rid !== _recordsRenderId) return;
+  body.replaceChildren(frag);
+  if (summary) summary.textContent = summaryText;
+}
+
+function refreshRecords() {
+  renderExerciseRecords().catch(() => {});
 }
 
 /* ================= STREAK: day-status engine =================
@@ -915,6 +1158,7 @@ async function renderPlans() {
         await renderPlans();
         await renderPlanSwitcherCard();
         renderToday();
+        refreshRecords();
       });
     });
     card.appendChild(head);
@@ -949,6 +1193,7 @@ async function togglePlanCard(p, card, plans) {
 
     await renderPlanSwitcherCard();
     renderToday();
+    refreshRecords();
   }
 
   /* Toggle expansion */
@@ -1045,6 +1290,7 @@ async function renderDayExerciseEditorInline(day, plan, container) {
       const maxOrder = Math.max(-1, ...current.map(e => e.order || 0));
       await DB.add('exercises', { planDayId: day.id, name, targetReps: 8, targetSets: 3, order: maxOrder + 1 });
       renderDayExerciseEditorInline(day, plan, container);
+      refreshRecords();
     });
   });
   box.appendChild(addBtn);
@@ -1057,6 +1303,7 @@ async function renderDayExerciseEditorInline(day, plan, container) {
       for (const ex of current) await DB.delete('exercises', ex.id);
       await DB.delete('planDays', day.id);
       renderPlanCardEditor(plan, container.closest('.plan-card'));
+      refreshRecords();
     });
   });
 }
@@ -1079,6 +1326,7 @@ document.getElementById('newPlanBtn').addEventListener('click', () => {
     await DB.add('plans', { name, isActive: isFirst });
     await renderPlans();
     await renderPlanSwitcherCard();
+    refreshRecords();
   });
 });
 
@@ -1093,6 +1341,7 @@ function promptNewPlan() {
       await DB.add('plans', { name, isActive: isFirst });
       await renderPlans();
       await renderPlanSwitcherCard();
+      refreshRecords();
     });
   }, 150);
 }
@@ -1108,6 +1357,7 @@ document.getElementById('planList').addEventListener('click', (e) => {
       await DB.add('plans', { name, isActive: isFirst });
       await renderPlans();
       await renderPlanSwitcherCard();
+      refreshRecords();
     });
   }
 });
@@ -1122,7 +1372,7 @@ function buildExerciseRow(ex, day, plan, wrap) {
     <div class="day-exercise-row-main">
       <span class="drag-handle" aria-hidden="true">${ICONS.grip}</span>
       <span class="ex-row-name">${escapeHtml(ex.name)}</span>
-      <span class="ex-row-meta">${ex.targetSets} × ${ex.targetReps}</span>
+      <span class="ex-row-meta">${ex.targetSets} &times; ${ex.type === 'time' ? fmtDuration(ex.targetReps) : ex.targetReps}</span>
     </div>
     <div class="day-exercise-row-actions">
       <button class="icon-btn edit-pencil" aria-label="Edit ${escapeHtml(ex.name)}">${ICONS.pencil}</button>
@@ -1139,6 +1389,7 @@ function buildExerciseRow(ex, day, plan, wrap) {
       await DB.delete('exercises', ex.id);
       const container = row.closest('.plan-card-body');
       if (container) renderDayExerciseEditorInline(day, plan, container);
+      refreshRecords();
     });
   });
   attachDragReorder(row, wrap);
@@ -1178,6 +1429,7 @@ function attachDragReorder(row, wrap) {
         await DB.put('exercises', exRecord);
       }
     }
+    refreshRecords();
   };
   const begin = (y) => { dragging = true; startY = y; row.classList.add('dragging'); vibrate(10); };
 
@@ -1197,28 +1449,34 @@ function openExerciseEditSheet(ex, day, plan) {
   const nameEl = document.getElementById('editExName');
   const repsEl = document.getElementById('editExReps');
   const setsEl = document.getElementById('editExSets');
+  const typeEl = document.getElementById('editExType');
   nameEl.value = ex.name;
   repsEl.value = ex.targetReps;
   setsEl.value = ex.targetSets;
+  typeEl.value = ex.type || 'reps';
+  const isTime = typeEl.value === 'time';
+  document.getElementById('editExRepsLabel').textContent = isTime ? 'Target duration (seconds)' : 'Target reps';
   [nameEl, repsEl, setsEl].forEach(el => el.classList.remove('invalid'));
   showSheet('editExSheet');
   document.getElementById('editExSaveBtn').onclick = async () => {
     const name = nameEl.value.trim();
     const reps = Math.round(Number(repsEl.value));
     const sets = Math.round(Number(setsEl.value));
-    const badName = !name, badReps = !(reps >= 1 && reps <= 100), badSets = !(sets >= 1 && sets <= 20);
+    const type = typeEl.value;
+    const badName = !name, badReps = !(reps >= 1 && reps <= 7200), badSets = !(sets >= 1 && sets <= 20);
     nameEl.classList.toggle('invalid', badName);
     repsEl.classList.toggle('invalid', badReps);
     setsEl.classList.toggle('invalid', badSets);
     if (badName || badReps || badSets) return;
 
     const fresh = (await DB.get('exercises', ex.id)) || ex;   // keeps the latest order
-    Object.assign(fresh, { name, targetReps: reps, targetSets: sets });
+    Object.assign(fresh, { name, targetReps: reps, targetSets: sets, type });
     Object.assign(ex, fresh);
     await DB.put('exercises', fresh);
     hideSheet('editExSheet');
     const container = document.querySelector('.plan-card.is-expanded .plan-card-body');
     if (container) renderDayExerciseEditorInline(day, plan, container);
+    refreshRecords();
   };
 }
 
@@ -1257,16 +1515,13 @@ async function importData(json) {
   await renderPlans();
   await renderPlanSwitcherCard();
   renderNutritionCard().catch(() => {});
+  refreshRecords();
   renderToday();
   updateStreakPill();
   renderStreak();
   renderGreeting();
 }
 
-document.getElementById('exportDataBtn').addEventListener('click', exportAllData);
-document.getElementById('importDataBtn').addEventListener('click', () => {
-  document.getElementById('importFileInput').click();
-});
 document.getElementById('importFileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -1291,12 +1546,241 @@ document.getElementById('importFileInput').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
+/* ================= TIMER / STOPWATCH ================= */
+let timerRunning = false;
+let timerElapsed = 0;
+let timerInterval = null;
+
+function fmtTimer(secs) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${pad2(m)}:${pad2(s)}`;
+}
+
+function updateTimerDisplay() {
+  const display = document.getElementById('timerDisplay');
+  const formatted = fmtTimer(timerElapsed);
+  if (display) {
+    display.textContent = formatted;
+    display.className = 'timer-display' + (timerRunning ? ' running' : (timerElapsed > 0 ? ' paused' : ''));
+  }
+}
+
+function timerStart() {
+  if (timerRunning) return;
+  timerRunning = true;
+  timerInterval = setInterval(() => { timerElapsed++; updateTimerDisplay(); }, 1000);
+  document.getElementById('timerStartBtn').textContent = 'Pause';
+  setTimerSaveBar(false);
+  updateTimerDisplay();
+}
+
+function timerPause() {
+  if (!timerRunning) return;
+  timerRunning = false;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  document.getElementById('timerStartBtn').textContent = 'Resume';
+  updateTimerDisplay();
+  if (timerElapsed > 0) setTimerSaveBar(true);
+}
+
+function timerReset() {
+  timerRunning = false;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  timerElapsed = 0;
+  document.getElementById('timerStartBtn').textContent = 'Start';
+  setTimerSaveBar(false, true);
+  updateTimerDisplay();
+}
+
+function setTimerSaveBar(show, clearInput) {
+  const bar = document.getElementById('timerSaveBar');
+  const input = document.getElementById('timerLabelInput');
+  if (!bar) return;
+  bar.hidden = !show;
+  if (clearInput && input) {
+    input.value = '';
+    input.classList.remove('invalid');
+  }
+}
+
+let _stopwatchSaveInFlight = false;
+async function saveStopwatchLog() {
+  if (_stopwatchSaveInFlight || timerRunning || timerElapsed < 1) return;
+  const input = document.getElementById('timerLabelInput');
+  const label = input.value.trim();
+  if (!label) {
+    input.classList.add('invalid');
+    input.focus();
+    showSnackbar('Add a label for this hold.');
+    return;
+  }
+  input.classList.remove('invalid');
+  _stopwatchSaveInFlight = true;
+  try {
+    const duration = timerElapsed;
+    const logs = await DB.getAll('stopwatch_logs');
+    const key = label.toLowerCase();
+    const prevMax = Math.max(0, ...logs.filter(l => (l.label || '').toLowerCase() === key).map(l => l.duration || 0));
+    const isPR = duration > prevMax;
+    await DB.add('stopwatch_logs', { duration, ts: Date.now(), label, isPR });
+    vibrate(isPR ? [30, 50, 30] : [30]);
+    timerReset();
+    showSnackbar(isPR ? 'Saved. New PR recorded.' : `Saved ${label}`, isPR ? 'pr' : '');
+    refreshRecords();
+  } finally {
+    _stopwatchSaveInFlight = false;
+  }
+}
+document.getElementById('timerSaveBtn').addEventListener('click', saveStopwatchLog);
+document.getElementById('timerLabelInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); saveStopwatchLog(); }
+});
+document.getElementById('timerLabelInput').addEventListener('input', (e) => {
+  e.target.classList.remove('invalid');
+});
+
+/* ================= NAVIGATION DRAWER ================= */
+function openDrawer() {
+  document.getElementById('navDrawer').classList.add('show');
+  document.getElementById('drawerBackdrop').classList.add('show');
+  const timerDisplay = document.getElementById('timerDisplay');
+  const drawerTimerMeta = document.getElementById('drawerTimerMeta');
+  if (timerDisplay && drawerTimerMeta) drawerTimerMeta.textContent = timerDisplay.textContent;
+}
+function closeDrawer() {
+  document.getElementById('navDrawer').classList.remove('show');
+  document.getElementById('drawerBackdrop').classList.remove('show');
+}
+
+document.getElementById('menuBtn').addEventListener('click', openDrawer);
+document.getElementById('drawerBackdrop').addEventListener('click', closeDrawer);
+
+document.getElementById('drawerProfile').addEventListener('click', () => { closeDrawer(); setTimeout(openProfileSheet, 150); });
+document.getElementById('drawerTimer').addEventListener('click', () => { closeDrawer(); setTimeout(() => showSheet('timerSheet'), 150); });
+document.getElementById('drawerMacro').addEventListener('click', () => {
+  closeDrawer();
+  setTimeout(() => {
+    showSheet('macroSheet');
+    renderNutritionCard().catch(() => {});
+  }, 150);
+});
+document.getElementById('drawerBackup').addEventListener('click', () => { closeDrawer(); setTimeout(() => showSheet('backupSheet'), 150); });
+document.getElementById('drawerAbout').addEventListener('click', () => { closeDrawer(); setTimeout(() => showSheet('aboutSheet'), 150); });
+
+/* Backup dialog buttons reuse existing export/import functions */
+document.getElementById('drawerExportBtn').addEventListener('click', () => { hideSheet('backupSheet'); exportAllData(); });
+document.getElementById('drawerImportBtn').addEventListener('click', () => { hideSheet('backupSheet'); document.getElementById('importFileInput').click(); });
+document.getElementById('backupCloseBtn').addEventListener('click', () => hideSheet('backupSheet'));
+document.getElementById('timerStartBtn').addEventListener('click', () => {
+  if (timerRunning) { timerPause(); } else { timerStart(); }
+});
+document.getElementById('timerResetBtn').addEventListener('click', timerReset);
+
+/* ================= DAY SPLIT OVERRIDE (daily swap) ================= */
+const DAY_SWAP_KEY = 'prx_day_swaps';
+
+function getDaySwaps() {
+  try { return JSON.parse(localStorage.getItem(DAY_SWAP_KEY) || '{}'); } catch { return {}; }
+}
+function setDaySwap(dateStr, planDayId) {
+  const swaps = getDaySwaps();
+  if (planDayId == null) delete swaps[dateStr];
+  else swaps[dateStr] = planDayId;
+  localStorage.setItem(DAY_SWAP_KEY, JSON.stringify(swaps));
+}
+/* Today's override planDay if it still belongs to the active plan; drops stale ids. */
+function resolveDaySwap(planDays) {
+  const swapId = getDaySwaps()[todayStr()];
+  if (swapId == null) return null;
+  const found = planDays.find(pd => pd.id === Number(swapId));
+  if (!found) { setDaySwap(todayStr(), null); return null; }
+  return found;
+}
+
+async function openSwapSheet() {
+  const container = document.getElementById('swapDayList');
+  container.innerHTML = '';
+  const plan = await getActivePlan();
+  if (!plan) {
+    container.innerHTML = '<div class="plan-empty">No active plan</div>';
+    showSheet('swapSheet');
+    return;
+  }
+  const planDays = await DB.getAllByIndex('planDays', 'planId', plan.id);
+  if (planDays.length === 0) {
+    container.innerHTML = '<div class="plan-empty">No splits in this plan yet</div>';
+    showSheet('swapSheet');
+    return;
+  }
+
+  const defaultDay = planDays.find(pd => pd.weekday === new Date().getDay());
+  const current = resolveDaySwap(planDays) || defaultDay;   // what the status bar shows
+  const choices = planDays
+    .filter(pd => !current || pd.id !== current.id)
+    .sort((a, b) => a.weekday - b.weekday);
+
+  for (const pd of choices) {
+    const item = document.createElement('div');
+    item.className = 'swap-item';
+    item.setAttribute('role', 'button');
+    item.tabIndex = 0;
+    const initial = ((pd.label || '?').trim()[0] || '?').toUpperCase();
+    item.innerHTML = `
+      <div class="swap-item-avatar">${escapeHtml(initial)}</div>
+      <div class="swap-item-name">${escapeHtml(pd.label || 'Session')}</div>
+      <div class="swap-item-meta">${WEEKDAY_NAMES[pd.weekday]}</div>`;
+    const pick = () => applyDaySwap(pd, !!defaultDay && pd.id === defaultDay.id);
+    item.addEventListener('click', pick);
+    item.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); }
+    });
+    container.appendChild(item);
+  }
+  if (choices.length === 0) {
+    container.innerHTML = '<div class="plan-empty">This is the only split in your plan</div>';
+  }
+  showSheet('swapSheet');
+}
+
+function applyDaySwap(planDay, isDefault) {
+  setDaySwap(todayStr(), isDefault ? null : planDay.id);
+  hideSheet('swapSheet');
+  showSnackbar(isDefault ? 'Reverted to the default split' : `${planDay.label || 'Session'} set for today`);
+  renderToday();
+}
+
+function revertDaySwap() {
+  setDaySwap(todayStr(), null);
+  showSnackbar('Reverted to the default split');
+  renderToday();
+}
+
+/* Status bar: swap + revert are delegated so they survive re-renders */
+document.getElementById('todayStatusBar').addEventListener('click', (e) => {
+  if (e.target.closest('.split-swap-btn')) openSwapSheet();
+  else if (e.target.closest('.revert-split-chip')) revertDaySwap();
+});
+
+/* ================= ABOUT DIALOG ================= */
+document.getElementById('aboutCloseBtn').addEventListener('click', () => hideSheet('aboutSheet'));
+
+/* ================= EXERCISE TYPE TOGGLE (edit sheet) ================= */
+document.getElementById('editExType').addEventListener('change', (e) => {
+  const isTime = e.target.value === 'time';
+  document.getElementById('editExRepsLabel').textContent = isTime ? 'Target duration (seconds)' : 'Target reps';
+  document.getElementById('editExReps').placeholder = isTime ? 'e.g. 90' : '';
+});
+
 /* ================= Init ================= */
 (async function init() {
   resetCalendarToCurrentMonth();
   await updateStreakPill();
   renderStreak();
   renderGreeting();
+  refreshRecords();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }

@@ -7,12 +7,14 @@
     exercises    { id, planDayId, name, targetReps, targetSets }
     logEntries   { id, exerciseId, date (YYYY-MM-DD), reps, sets, weight, isPR, ts }
     profileStore { id: 1 (singleton), weight, height, age, gender, activityLevel }
+    stopwatch_logs { id, duration (secs), ts, label, isPR }  -- labeled isometric
+                    holds saved from the stopwatch; added in v3 (additive only).
     streakState  -- legacy, unused since the rolling-window engine replaced it. Left
                     in place so opening an old DB doesn't error; nothing reads/writes it.
 */
 
 const DB_NAME = 'pr-logger';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 let _dbPromise = null;
 
 function openDB() {
@@ -43,6 +45,10 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains('profileStore')) {
         db.createObjectStore('profileStore', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('stopwatch_logs')) {
+        const s = db.createObjectStore('stopwatch_logs', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('label', 'label');
       }
     };
     req.onsuccess = () => resolve(req.result);
