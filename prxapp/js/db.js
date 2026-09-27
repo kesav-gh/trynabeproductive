@@ -52,7 +52,8 @@ function openDB() {
       }
     };
     req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onerror = () => { _dbPromise = null; reject(req.error); };
+    req.onblocked = () => console.warn('[prx] IndexedDB open blocked by another tab; waiting...');
   });
   return _dbPromise;
 }

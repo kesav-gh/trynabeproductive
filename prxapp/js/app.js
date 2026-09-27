@@ -891,7 +891,13 @@ function getWeekStartStr(dateStr) {
 }
 
 async function computeDayStatuses(throughDateStr) {
-  const logs = await DB.getAll('logEntries');
+  let logs;
+  try {
+    logs = await DB.getAll('logEntries');
+  } catch (err) {
+    console.error('[prx] Could not read logEntries:', err);
+    return { statuses: {}, streak: 0, firstDate: null, rechargesRemaining: RECHARGE_BANK, rechargeUsedThisWeek: false };
+  }
   if (logs.length === 0) {
     return { statuses: {}, streak: 0, firstDate: null, rechargesRemaining: RECHARGE_BANK, rechargeUsedThisWeek: false };
   }
@@ -1776,12 +1782,16 @@ document.getElementById('editExType').addEventListener('change', (e) => {
 
 /* ================= Init ================= */
 (async function init() {
-  resetCalendarToCurrentMonth();
-  await updateStreakPill();
-  renderStreak();
-  renderGreeting();
-  refreshRecords();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+  try {
+    resetCalendarToCurrentMonth();
+    await updateStreakPill();
+    await renderStreak();
+    await renderGreeting();
+    refreshRecords();
+  } catch (err) {
+    console.error('[prx] init failed:', err);
   }
 })();
